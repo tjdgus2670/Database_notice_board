@@ -1,0 +1,27 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta http-equiv="Content-Type" content="text/html; charset=utf-8"/>
+    <title>로그인</title>
+</head>
+<body>
+    <% if(errcode == 1) { %> <script> alert('로그인 아이디가 없습니다'); </script> <% } %>
+    <% if(errcode == 2) { %> <script> alert('패스워드가 틀립니다.'); </script> <% } %>
+    <% if(errcode == 3) { %> <script> alert('이미 로그인되어 있습니다.'); window.setTimeout(location.href='http://localhost:3000/bbs/', 1000 );</script> <% } %>
+    <form name="form1" action="/bbs/logincheck" method="post">
+        <table border="1" style="width:600px">
+            <tbody>
+                <tr>
+                    <td>아이디</td>
+                    <td><input type="text" name="id" placeholder="id" value=""></td>
+                </tr>
+                <tr>
+                    <td>패스워드</td>
+                    <td><input type="password" name="password" placeholder="password" value=""></td>
+                </tr>
+            </tbody>
+        </table>
+        <a href="#" onclick="form1.submit()">로그인</a>
+    </form>
+</body>
+</html>

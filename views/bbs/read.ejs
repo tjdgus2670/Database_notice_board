@@ -1,0 +1,86 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta http-equiv="Content-Type" content="text/html"; charset="utf-8"/>
+    <title>글읽기</title>
+</head>
+<body>
+    <%
+        console.log("rows : " + JSON.stringify(bbs.rows));
+        console.log("rows : " + bbs.rows.length);
+        var column=bbs.rows[0];
+    %>
+        <table border="1" style="width:1024px">
+            <tbody>
+                <tr>
+                    <td>글번호</td>
+                    <td><%=column[0]%></td>
+                </tr>
+                <tr>
+                    <td>작성자</td>
+                    <td><%=column[3]%></td>
+                </tr>
+                <tr>
+                    <td>제목</td>
+                    <td><%=column[1]%></td>
+                </tr>
+                <tr>
+                    <td>내용</td>
+                    <td><%=column[2]%></td>
+                </tr>
+                <tr>
+                    <td>작성 날짜</td>
+                    <td><%=column[4]%></td>
+                </tr>
+                <tr>
+                    <td>조회수</td>
+                    <td><%=column[5]%></td>
+                </tr>
+
+            </tbody>
+        </table>
+        <p>
+            <a href="/bbs/list">게시판 홈으로 돌아가기</a>  /
+            <a href="/bbs/delete?brdno=<%=column[0]%>">삭제</a> /
+            <a href="/bbs/update?brdno=<%=column[0]%>">수정</a>
+        </p>
+
+        <p>
+            <form name="form1" action="/bbs/wsave" method="post">
+                <table border="1" style="width:1024px">
+                    <tbody>
+                        <tr>
+                            <td>댓글 내용</td>
+                            <td><textarea name="wbrdmemo" rows="3" cols="70"></textarea></td>
+                        </tr>             
+                    </tbody>
+                </table>
+                <a href="#" onclick="form1.submit()">댓글저장</a>
+                <input type="hidden" name="bbsno" value="<%=column[0]%>">
+            </form>
+        </p>
+        <table border="1" style="width:1024px">
+            <tbody>
+        <%
+            console.log("wlist start ============");
+            console.log("wrows : " + wbbs.rows.length);
+
+            for(var i=0;i<wbbs.rows.length;i++) { 
+                wcolumn=wbbs.rows[i];
+                console.log(wcolumn[0]);
+        %>
+                <tr>
+                    <td><%=wcolumn[2]%></td>
+                    <td><%=wcolumn[3]%></td>
+                    <td><%=wcolumn[4]%></td>
+                    <td> <a href='/bbs/wgood?brdno=<%=wcolumn[0]%>'>좋아요</a> /
+                         <a href='/bbs/wbad?brdno=<%=wcolumn[0]%>'>나빠요</a>  /
+                         <a href='/bbs/w_write?brdno=<%=column[0]%>'>댓글쓰기</a>  /
+                         <a href='/bbs/w_delete?brdno=<%=column[0]%>'>댓글지우기</a> </td>
+                </tr>
+        <%
+            }
+        %>
+        </table>
+</body>
+</html>

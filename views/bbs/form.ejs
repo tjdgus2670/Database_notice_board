@@ -1,0 +1,42 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta http-equiv="Content-Type" content="text/html; charset=utf-8"/>
+    <title>글작성</title>
+
+</head>
+<body>
+    <% if(id == 0) { %> <script> alert('글작성 권한이 없습니다.'); 
+                                 window.setTimeout(location.href='http://localhost:3000/bbs/', 1000 ); </script> <% } %>
+        
+    <form name="form1" action="/bbs/save" method="post">
+        <table border="1" style="width:600px">
+            <tbody>
+                <tr>
+                    <td>작성자</td>
+                    <td><input type="text" name="brdwriter" size="20" maxlength="20" value="<%=id%>"></td>
+                </tr>
+                <tr>
+                    <td>제목</td>
+                    <td><input type="text" name="brdtitle" size="70" maxlength="250" value=""></td>
+                </tr>
+                <tr>
+                    <td>내용</td>
+                    <td><textarea name="brdmemo" rows="5" cols="60"></textarea></td>
+                </tr> 
+                <tr>
+               
+                    <td> 파일 업로드</td>
+                    <td> <input type="file" name="userfile">  </td>
+                    </form>
+                   
+                </tr>
+            </tbody>
+        </table>
+
+        <a href="#" onclick="form1.submit()">저장</a>
+    </form>
+
+
+</body>
+</html>
