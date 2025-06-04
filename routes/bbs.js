@@ -8,14 +8,65 @@ var multer = require('multer'); // multer 모듈 추가
 var path = require('path'); // 파일 경로 처리를 위해 path 모듈 추가
 const fs = require('fs'); // 파일 삭제를 위해 fs 모듈 추가
 
-oracledb.autoCommit = true;
+// !!! 중요 !!! autoCommit 설정을 false로 변경했습니다.
+// 수동 트랜잭션 관리를 위해 필요합니다.
+oracledb.autoCommit = false; // <<< 이 부분이 변경되었습니다!
 
 var dbconfig = {
     user : "TEST_USER",
     password : "1234",
     connectString : "localhost/XEPDB1"
 };
+router.get('/read', async function(req,res,next){
+    console.log(`[Info] /read: 게시글 조회 요청 (NO: ${req.query.brdno})`);
 
+    let connection;
+    try {
+        const retBBS = await read_bbs(req.query.brdno);
+        if (!retBBS || retBBS.rows.length === 0) {
+            console.warn(`[Warning] /read: 게시글 (NO: ${req.query.brdno})을 찾을 수 없음.`);
+            return res.render('bbs/error', { errcode: 404 });
+        }
+
+        connection = await oracledb.getConnection(dbconfig);
+
+        const userId = req.session.user ? req.session.user.id : null;
+
+        // !!! 여기부터 댓글 조회 SQL이 변경됩니다 !!!
+        // Oracle의 계층 쿼리 (CONNECT BY)를 사용하여 대댓글 구조를 올바르게 정렬합니다.
+        // SYS_CONNECT_BY_PATH 함수를 사용하여 경로를 생성하고, 이를 정렬 기준으로 활용합니다.
+        // ORDER SIBLINGS BY REGDATE ASC, NO ASC 는 같은 레벨(형제) 댓글들을 정렬합니다.
+        // 계층 쿼리에서는 ORDER_IN_GROUP 컬럼을 직접 업데이트하고 관리하는 것보다
+        // CONNECT BY와 LEVEL, ORDER SIBLINGS BY를 사용하는 것이 더 안전하고 강력합니다.
+        var wbbsSql = `
+            SELECT
+                BBSW.NO, BBSW.BBS_NO, BBSW.WRITER, BBSW.CONTENT,
+                to_char(BBSW.REGDATE,'yyyy-mm-dd hh24:mi:ss') AS REGDATE_FORMATTED,
+                BBSW.WCOUNT, BBSW.OK, BBSW.PARENT_NO, BBSW.DEPTH,
+                BBSW.GROUP_ID, BBSW.ORDER_IN_GROUP, BBSW.GOOD, BBSW.BAD,
+                LEVEL AS HIERARCHY_LEVEL, -- 계층 레벨 (들여쓰기용)
+                (SELECT VOTE_TYPE FROM BBSW_LIKES WHERE USER_ID = :userId AND COMMENT_NO = BBSW.NO) AS MY_VOTE_TYPE
+            FROM BBSW
+            START WITH PARENT_NO IS NULL AND BBS_NO = :bbs_no -- 최상위 댓글부터 시작
+            CONNECT BY PRIOR NO = PARENT_NO AND BBS_NO = PRIOR BBS_NO -- 부모-자식 관계 정의
+            ORDER SIBLINGS BY REGDATE ASC, NO ASC -- 형제 댓글들을 등록일자, 번호 순으로 정렬
+        `;
+        console.log(`[Info] /read: 댓글 조회 SQL (계층 쿼리): ${wbbsSql}`);
+        const wbbsRows = await connection.execute(wbbsSql, { bbs_no: req.query.brdno, userId: userId });
+        console.log(`[Info] /read: 댓글 ${wbbsRows.rows.length}개 조회됨.`);
+
+        res.render('bbs/read', {bbs: retBBS, wbbs: wbbsRows.rows, loggedInUser: req.session.user});
+
+    } catch (err) {
+        console.error(`[Error] /read: 게시글/댓글 조회 중 오류 발생: ${err.message}`, err.stack);
+        res.render('bbs/error', {errcode: 500});
+    } finally {
+        if (connection) {
+            try { await connection.close(); }
+            catch (e) { console.error(`[Error] /read: DB 연결 해제 중 오류: ${e.message}`, e.stack); }
+        }
+    }
+});
 // 파일이 업로드될 디렉토리 설정 (프로젝트 루트의 'public/uploads' 디렉토리)
 // 이 디렉토리는 수동으로 생성해주어야 합니다!
 const UPLOAD_DIR = path.join(__dirname, '../public/uploads');
@@ -36,7 +87,6 @@ var storage = multer.diskStorage({
         cb(null, file.fieldname + '-' + uniqueSuffix + path.extname(file.originalname));
     }
 });
-
 // Multer 업로드 미들웨어 생성
 // 'upload' 변수를 사용하여 파일 업로드를 처리합니다.
 var upload = multer({
@@ -55,8 +105,6 @@ var upload = multer({
         cb(new Error("Unsupported file type. Only common document/image types are allowed."));
     }
 });
-
-
 router.get('/', function(req, res, next) {
     res.redirect('/bbs/list');
 });
@@ -66,25 +114,22 @@ router.get('/login', function(req, res, next) {
     if(req.session.user)    code = 3;
     res.render('bbs/login', {errcode : code});
 });
-
 router.get('/logout', function(req, res, next) {
     
     if(req.session.user)    req.session.destroy();
 
     res.redirect('/bbs/list');    
 });
-
 router.get('/signup', function(req, res, next) {
     var code = 0;
     if( req.session.user )    code = 1;
     res.render('bbs/signup', {code : code});    
 });
-
 router.post('/signupsave', function(req, res, next) {
     var id = req.body.id, pw1 = req.body.pw1, pw2 = req.body.pw2;
     var name = req.body.name;
     var email = req.body.email;
-    var code = 0 ; // 1-두개의 패스워드 틀린경우 
+    var code = 0 ; // 1-두개의 패스워드 틀린경우  
     
     if( pw1 != pw2)
     {
@@ -92,7 +137,8 @@ router.post('/signupsave', function(req, res, next) {
         res.render('bbs/error', {errcode : code});
         return;
     }
-    if( id == "" || pw1 == "" || name == "")
+    if( id == ""  
+|| pw1 == "" || name == "")
     {
         code = 2;
         res.render('bbs/error', {errcode : code});
@@ -105,7 +151,8 @@ router.post('/signupsave', function(req, res, next) {
     console.log("salt : "+salt);
     console.log("hashPassword : "+hashPassword);
 
-    var sql = "INSERT INTO LOGIN(ID, PASSWORD, NAME, EMAIL, SALT, OK) " + "VALUES('" + id + "','" + hashPassword + "','" + name + "','" + email + "','" + salt + "', 1)";    
+    var sql = "INSERT INTO LOGIN(ID, PASSWORD, NAME, EMAIL, SALT, OK) " + "VALUES('" + id + "','" + hashPassword + "','" +  
+name + "','" + email + "','" + salt + "', 1)";     
     
     console.log("sql :"+sql);
     oracledb.getConnection(dbconfig, function(err,connection){
@@ -114,20 +161,20 @@ router.post('/signupsave', function(req, res, next) {
             if(err)
             {
                 code = 3;
-                res.render('bbs/error', {errcode : code});
+res.render('bbs/error', {errcode : code});
                 return;
             } 
 
             res.redirect('/bbs/login');
-        });    
-    });
+        });
+});
 });
 
 
 router.get('/updatesignup',function(req,res,next) {
     var code = 0;
 
-    if(req.session.user) 
+    if(req.session.user)
     {
         oracledb.getConnection(dbconfig,function(err,connection){
             var sql = "SELECT ID, PASSWORD, NAME, EMAIL FROM LOGIN WHERE ID = '"+req.session.user.id+"'";
@@ -135,7 +182,8 @@ router.get('/updatesignup',function(req,res,next) {
             connection.execute(sql,function(err,rows){
                 if(err) console.error("err : "+ err);
 
-                res.render('bbs/updatesignform', rows);
+  
+               res.render('bbs/updatesignform', rows);
                 connection.release();
            });
         });
@@ -147,7 +195,6 @@ router.get('/updatesignup',function(req,res,next) {
         return;
     }
 });
-
 router.post('/updatesignsave', function(req, res, next) {
     var id = req.body.id, pw = req.body.pw1, name = req.body.name, email = req.body.email;
 
@@ -155,8 +202,9 @@ router.post('/updatesignsave', function(req, res, next) {
     var hashPassword = crypto.createHash("sha512").update(pw + salt).digest("base64");
 
     oracledb.getConnection(dbconfig, function(err, connection) {
-        var sql = "UPDATE LOGIN SET PASSWORD = '" + hashPassword + "', SALT = '" + salt + "'," +
-                  " NAME = '" + name + "', EMAIL = '" + email + "' WHERE ID = '" + id + "'";
+        var sql = "UPDATE LOGIN SET PASSWORD = '" + hashPassword + "', SALT = '" + salt + "'," + 
+                  " NAME = '" + name  
++ "', EMAIL = '" + email + "' WHERE ID = '" + id + "'";
 
         console.log("sql : " + sql);
         connection.execute(sql, function(err, rows) {
@@ -166,7 +214,6 @@ router.post('/updatesignsave', function(req, res, next) {
         });
     });
 });
-
 router.post('/logincheck', async function(req, res, next) {
     var id = req.body.id;
     var pw = req.body.password;
@@ -176,29 +223,26 @@ router.post('/logincheck', async function(req, res, next) {
     try {
         // 1) 로그인 검증 전에 마이그레이션 수행
         await migrateUnhashedPasswords();
-
-        // 2) DB 연결 후 사용자 조회
+// 2) DB 연결 후 사용자 조회
         connection = await oracledb.getConnection(dbconfig);
-
-        const selectSql = "SELECT OK, PASSWORD, SALT FROM LOGIN WHERE ID = :id";
-        const result = await connection.execute(selectSql, { id });
+const selectSql = "SELECT OK, PASSWORD, SALT FROM LOGIN WHERE ID = :id";
+const result = await connection.execute(selectSql, { id });
 
         // 2-1) 해당 ID가 없는 경우
         if (!result.rows || result.rows.length < 1) {
             console.log('로그인 아이디가 없습니다.');
-            code = 1; // errcode 1: 아이디 없음
+code = 1; // errcode 1: 아이디 없음
             return res.render('bbs/login', { errcode: code });
-        }
+}
 
         // 2-2) 결과에서 OK, DB 비밀번호, SALT 추출
         const [okValue, dbHashPassword, dbSalt] = result.rows[0];
-
-        // 3) OK 검사 (0이거나 1이 아닌 값이면 비활성 계정)
+// 3) OK 검사 (0이거나 1이 아닌 값이면 비활성 계정)
         if (okValue !== 1) {
             console.log("비활성 계정으로 로그인 불가: OK =", okValue);
-            code = 6; // errcode 6: 비활성화 계정
+code = 6; // errcode 6: 비활성화 계정
             return res.render('bbs/login', { errcode: code });
-        }
+}
 
         // 4) dbSalt는 이미 마이그레이션이 끝났으므로 항상 “해시된 상태”가 되어 있어야 함
         //    (만약 migrateUnhashedPasswords 에서 예외가 발생하여 일부만 해싱된 상태라면
@@ -206,39 +250,38 @@ router.post('/logincheck', async function(req, res, next) {
         const hashPassword = crypto
             .createHash("sha512")
             .update(pw + dbSalt)
-            .digest("base64");
-
-        // 5) 해시 비교
+   
+          .digest("base64");
+// 5) 해시 비교
         if (hashPassword !== dbHashPassword) {
             console.log("패스워드가 틀렸습니다.");
-            code = 2; // errcode 2: 비밀번호 오류
+code = 2; // errcode 2: 비밀번호 오류
             return res.render('bbs/login', { errcode: code });
-        }
+}
 
         // 6) 로그인 성공 → 세션 생성
         if (!req.session.user) {
             console.log("새로운 세션을 만듭니다.");
-            req.session.user = {
+req.session.user = {
                 id          : id,
                 authorized  : true
             };
-        }
+}
 
         // 7) 로그인 완료 후 목록 페이지로 리디렉션
         return res.redirect('/bbs/list');
-
-    } catch (err) {
+} catch (err) {
         console.error("로그인 처리 중 오류:", err);
-        return res.render('bbs/error', { errcode: 500 });
+return res.render('bbs/error', { errcode: 500 });
     } finally {
         if (connection) {
-            try { await connection.close(); }
-            catch (e) { console.error(e); }
+            try { await connection.close();
+}
+            catch (e) { console.error(e);
+}
         }
     }
 });
-
-
 async function countRecord(){
     return new Promise(function(resolve,reject) {
         oracledb.getConnection(dbconfig,function(err,connection) {
@@ -246,17 +289,20 @@ async function countRecord(){
                 console.error("DB connection error:", err);
                 return reject(err);
             }
-            var sql = "SELECT COUNT(*) FROM BBS WHERE OK = 1"; // OK = 1 인 활성화된 게시글만 카운트
+            var sql = "SELECT COUNT(*) FROM BBS WHERE " + 
+"OK = 1"; // OK = 1 인 활성화된 게시글만 카운트
             connection.execute(sql,function(err,count){
                 if(err) {
                     console.error("Error counting active records: " + err);
                     connection.release();
-                    reject(err);
+               
+      reject(err);
                     return;
                 }
                 var totalRecords=parseInt(count.rows[0][0]); // Oracle의 COUNT(*) 결과는 [[숫자]] 형태이므로 [0][0] 접근
                 console.log("Total Active Records is "+totalRecords);
-                connection.release();
+              
+   connection.release();
                 resolve(totalRecords);
             });
         });
@@ -277,31 +323,34 @@ router.get('/list',async function(req,res,next) {
         stNum=(currentPage-1)*pageSize;
 
         oracledb.getConnection(dbconfig,function(err,connection){
-            if (err) {
+           
+  if (err) {
                 console.error("DB connection error:", err);
                 return res.render('bbs/error', { errcode: 500 });
             }
 
             // SQL 쿼리에 OK = 1 조건 추가
             // data.rows에서 'OK' 컬럼의 인덱스는 현재 5번이므로, FILE_PATH, ORIGINAL_FILE_NAME이 추가되면 7, 8번으로 변경됩니다.
-            // 따라서 SELECT 문에 명시적으로 OK 컬럼을 포함시키고 인덱스를 확인해야 합니다.
-            var sql = "SELECT NO, TITLE, WRITER, CONTENT, to_char(REGDATE,'yyyy-mm-dd hh24:mi:ss'), OK, COUNT, FILE_PATH, ORIGINAL_FILE_NAME" +
+  
+           // 따라서 SELECT 문에 명시적으로 OK 컬럼을 포함시키고 인덱스를 확인해야 합니다.
+var sql = "SELECT NO, TITLE, WRITER, CONTENT, to_char(REGDATE,'yyyy-mm-dd hh24:mi:ss'), OK, COUNT, FILE_PATH, ORIGINAL_FILE_NAME" + 
                                 " FROM BBS WHERE OK = 1 ORDER BY NO DESC OFFSET "+stNum+" ROWS FETCH NEXT "+pageSize+" ROWS ONLY";
-
-            connection.execute(sql,function(err,rows){
+connection.execute(sql,function(err,rows){
                 if(err) {
                     console.error("err : "+err);
                     connection.release();
                     return res.render('bbs/error', { errcode: 500 });
-                }
+                
+}
 
                 console.log(rows);
-                res.render('bbs/list', {data:rows,currentPage:currentPage,totalRecords:totalRecords,pageSize:pageSize,
-                                         totalPage:totalPage,blockSize:blockSize,firstPage:firstPage,lastPage:lastPage,
-                                         stNum:stNum, loggedInUser: req.session.user}); // loggedInUser 추가
+                res.render('bbs/list', {data:rows,currentPage:currentPage,totalRecords:totalRecords,pageSize:pageSize, 
+                                         totalPage:totalPage,blockSize:blockSize,firstPage:firstPage,lastPage:lastPage, 
+                          
+                stNum:stNum, loggedInUser: req.session.user}); // loggedInUser 추가
                 connection.release();
             });
-        });
+});
     }).catch(function(error) {
         console.error("Error in countRecord:", error);
         res.render('bbs/error', { errcode: 500, message: "게시글 수를 불러오는 중 오류가 발생했습니다." });
@@ -314,7 +363,6 @@ router.get('/form',function(req,res,next){
     else
         res.render('bbs/form', {id:0});
 });
-
 // 파일 업로드 처리를 위해 upload.single('userfile') 미들웨어 추가
 router.post('/save', upload.single('userfile'), function(req,res,next){
     const { brdtitle, brdmemo, brdwriter } = req.body; // 구조 분해 할당으로 가독성 높임
@@ -324,7 +372,8 @@ router.post('/save', upload.single('userfile'), function(req,res,next){
     if (!brdtitle || brdtitle.trim() === '') {
         console.warn(`[Warning] /save: 제목이 비어있어 게시글 작성을 거부합니다.`);
         code = 7; // 에러 코드 7: 제목 필수
-        return res.render('bbs/error', { errcode: code, message: "제목은 필수 입력 사항입니다." });
+        return res.render('bbs/error', { errcode: code, message: "제목은 필수 입력 사항입니다."  
+});
     }
     if (!brdmemo || brdmemo.trim() === '') {
         console.warn(`[Warning] /save: 내용이 비어있어 게시글 작성을 거부합니다.`);
@@ -335,28 +384,29 @@ router.post('/save', upload.single('userfile'), function(req,res,next){
     oracledb.getConnection(dbconfig,function(err,connection){
         if (err) {
             console.error("DB connection error:", err);
+ 
             return res.render('bbs/error', { errcode: 500 });
         }
 
         let filePath = null;
         let originalFileName = null;
-        
-        if (req.fileValidationError) {
+if (req.fileValidationError) {
             console.error("File upload validation error:", req.fileValidationError);
             connection.release();
-            return res.render('bbs/error', { errcode: 400, message: req.fileValidationError.message });
+return res.render('bbs/error', { errcode: 400, message: req.fileValidationError.message });
         }
 
         if (req.file) {
-            filePath = '/uploads/' + req.file.filename; 
-            originalFileName = req.file.originalname;
+            filePath = '/uploads/' + req.file.filename;
+originalFileName = req.file.originalname;
             console.log("Uploaded file:", req.file);
             console.log("File path for DB:", filePath);
-        }
+}
 
         // SQL 쿼리 수정: OK 컬럼에 1을 삽입
-        const sql = "INSERT INTO BBS(NO, TITLE, CONTENT, WRITER, REGDATE, FILE_PATH, ORIGINAL_FILE_NAME, OK) " +
-                            "VALUES(bbs_seq.nextval, :title, :content, :writer, SYSDATE, :filePath, :originalFileName, :ok)"; // OK 컬럼 추가
+        const sql = "INSERT INTO BBS(NO, TITLE, CONTENT, WRITER, REGDATE, FILE_PATH, ORIGINAL_FILE_NAME, OK) " + 
+                            "VALUES(bbs_seq.nextval, :title, :content, :writer, SYSDATE, :filePath, :originalFileName, :ok)";
+// OK 컬럼 추가
         
         const binds = {
             title: brdtitle,
@@ -364,26 +414,28 @@ router.post('/save', upload.single('userfile'), function(req,res,next){
             writer: brdwriter,
             filePath: filePath,
             originalFileName: originalFileName,
-            ok: 1 // 새 게시글은 기본적으로 활성화 (OK=1)
+            ok:  
+1 // 새 게시글은 기본적으로 활성화 (OK=1)
         };
-
-        connection.execute(sql, binds, { autoCommit: true }, function(err, result){ 
+connection.execute(sql, binds, { autoCommit: true }, function(err, result){  
             if(err) {
                 console.error("DB execute error:", err);
                 if (req.file) {
                     fs.unlink(req.file.path, (unlinkErr) => {
-                        if (unlinkErr) console.error("Error deleting uploaded file:", unlinkErr);
+                   
+      if (unlinkErr) console.error("Error deleting uploaded file:", unlinkErr);
                     });
                 }
-                connection.release(); 
+                connection.release();
                 return res.render('bbs/error', { errcode: 500 });
             } 
-            
+  
+           
             console.log("Rows affected:", result.rowsAffected);
             res.redirect('/bbs/list');
-            connection.release(); 
+            connection.release();
         });
-    });
+});
 });
 
 router.get('/read_count',function(req,res,next){
@@ -397,14 +449,14 @@ router.get('/read_count',function(req,res,next){
         
         connection.execute(sql,function(err,rows){
             if(err) console.error("err : "+err);
-            console.log("rows : "+JSON.stringify(rows));
+            console.log("rows : " + 
+" "+JSON.stringify(rows));
 
             res.redirect('/bbs/read?brdno='+req.query.brdno);
             connection.release();
         });
     });
 });
-
 async function read_bbs(brdno){
     return new Promise(function(resolve,reject) {
         oracledb.getConnection(dbconfig,function(err,connection) {
@@ -412,17 +464,19 @@ async function read_bbs(brdno){
                 console.error("DB connection error:", err);
                 return reject(err);
             }
-            // SQL 쿼리 수정: OK = 1 조건 추가
-            var sql = "SELECT NO, TITLE, WRITER, CONTENT, to_char(REGDATE,'yyyy-mm-dd hh24:mi:ss'), OK, COUNT, FILE_PATH, ORIGINAL_FILE_NAME FROM BBS "+
+            // SQL 쿼리 수정: OK = 1 조건  
+            var sql = "SELECT NO, TITLE, WRITER, CONTENT, to_char(REGDATE,'yyyy-mm-dd hh24:mi:ss'), OK, COUNT, FILE_PATH, ORIGINAL_FILE_NAME FROM BBS "+ 
                               " WHERE NO = :brdno AND OK = 1"; // 활성화된 게시글만 조회
 
             connection.execute(sql, { brdno: brdno }, function(err,retBBS){
-                if(err) {
+             
+    if(err) {
                     console.error("err : " + err);
                     connection.release();
                     reject(err);
                 } else {
-                    connection.release();
+              
+       connection.release();
                     resolve(retBBS);
                 }
             });
@@ -444,21 +498,31 @@ router.get('/read', async function(req,res,next){
         connection = await oracledb.getConnection(dbconfig);
 
         const userId = req.session.user ? req.session.user.id : null;
-        var sql = `
+
+        // !!! 여기부터 댓글 조회 SQL이 변경됩니다 !!!
+        // Oracle의 계층 쿼리 (CONNECT BY)를 사용하여 대댓글 구조를 올바르게 정렬합니다.
+        // SYS_CONNECT_BY_PATH 함수를 사용하여 경로를 생성하고, 이를 정렬 기준으로 활용합니다.
+        // ORDER SIBLINGS BY REGDATE ASC, NO ASC 는 같은 레벨(형제) 댓글들을 정렬합니다.
+        // 계층 쿼리에서는 ORDER_IN_GROUP 컬럼을 직접 업데이트하고 관리하는 것보다
+        // CONNECT BY와 LEVEL, ORDER SIBLINGS BY를 사용하는 것이 더 안전하고 강력합니다.
+        var wbbsSql = `
             SELECT
-                BBSW.NO, BBSW.BBS_NO, BBSW.WRITER, BBSW.CONTENT, to_char(BBSW.REGDATE,'yyyy-mm-dd hh24:mi:ss') AS REGDATE_FORMATTED,
-                BBSW.WCOUNT, BBSW.OK, BBSW.PARENT_NO, BBSW.DEPTH, BBSW.GROUP_ID, BBSW.ORDER_IN_GROUP, BBSW.GOOD, BBSW.BAD,
+                BBSW.NO, BBSW.BBS_NO, BBSW.WRITER, BBSW.CONTENT,
+                to_char(BBSW.REGDATE,'yyyy-mm-dd hh24:mi:ss') AS REGDATE_FORMATTED,
+                BBSW.WCOUNT, BBSW.OK, BBSW.PARENT_NO, BBSW.DEPTH,
+                BBSW.GROUP_ID, BBSW.ORDER_IN_GROUP, BBSW.GOOD, BBSW.BAD,
+                LEVEL AS HIERARCHY_LEVEL, -- 계층 레벨 (들여쓰기용)
                 (SELECT VOTE_TYPE FROM BBSW_LIKES WHERE USER_ID = :userId AND COMMENT_NO = BBSW.NO) AS MY_VOTE_TYPE
             FROM BBSW
-            WHERE BBS_NO = :bbs_no
-            ORDER BY BBSW.GROUP_ID ASC, BBSW.ORDER_IN_GROUP ASC
+            START WITH PARENT_NO IS NULL AND BBS_NO = :bbs_no -- 최상위 댓글부터 시작
+            CONNECT BY PRIOR NO = PARENT_NO AND BBS_NO = PRIOR BBS_NO -- 부모-자식 관계 정의
+            ORDER SIBLINGS BY REGDATE ASC, NO ASC -- 형제 댓글들을 등록일자, 번호 순으로 정렬
         `;
-
-        console.log(`[Info] /read: 댓글 조회 SQL: ${sql}`);
-        const wbbsRows = await connection.execute(sql, { bbs_no: req.query.brdno, userId: userId });
+        console.log(`[Info] /read: 댓글 조회 SQL (계층 쿼리): ${wbbsSql}`);
+        const wbbsRows = await connection.execute(wbbsSql, { bbs_no: req.query.brdno, userId: userId });
         console.log(`[Info] /read: 댓글 ${wbbsRows.rows.length}개 조회됨.`);
 
-        res.render('bbs/read', {bbs: retBBS, wbbs: wbbsRows.rows, loggedInUser: req.session.user}); // req.session.user 전체 객체 전달
+        res.render('bbs/read', {bbs: retBBS, wbbs: wbbsRows.rows, loggedInUser: req.session.user});
 
     } catch (err) {
         console.error(`[Error] /read: 게시글/댓글 조회 중 오류 발생: ${err.message}`, err.stack);
@@ -488,76 +552,54 @@ router.post('/wsave', async function(req, res, next){
     let connection;
     try {
         connection = await oracledb.getConnection(dbconfig);
-        
-        let depth = 0;
-        let group_id;
-        let order_in_group;
+
+        await connection.execute('SET TRANSACTION ISOLATION LEVEL READ COMMITTED');
+        await connection.execute('ALTER SESSION SET NLS_DATE_FORMAT = \'YYYY-MM-DD HH24:MI:SS\'');
 
         // 1. 새로운 댓글의 NO를 Oracle 시퀀스에서 미리 얻기
-        // 이는 GROUP_ID를 자신으로 설정해야 하는 최상위 댓글의 경우에 필요합니다.
         const noResult = await connection.execute("SELECT bbsw_seq.nextval FROM DUAL");
         const newCommentNo = noResult.rows[0][0];
         console.log(`[Info] /wsave: 새로운 댓글 NO 할당: ${newCommentNo}`);
 
-        if (parent_no) { // **대댓글인 경우**
-            console.log(`[Info] /wsave: 대댓글 작성 시도 (부모 NO: ${parent_no})`);
-            // 부모 댓글의 DEPTH와 GROUP_ID를 조회
+        let depth = 0;
+        let group_id = newCommentNo; // 기본적으로 자신을 group_id로
+        let order_in_group = 0; // ORA-01400 에러 해결을 위해 초기값 0 설정
+
+        if (parent_no) { // 대댓글인 경우
+            // 부모 댓글의 DEPTH와 GROUP_ID만 조회
             const parentResult = await connection.execute(
                 "SELECT DEPTH, GROUP_ID FROM BBSW WHERE NO = :parent_no",
                 { parent_no: parent_no }
             );
 
             if (parentResult.rows.length > 0) {
-                const parentDepth = parentResult.rows[0][0];
-                const parentGroupId = parentResult.rows[0][1];
+                const parentComment = parentResult.rows[0];
+                depth = parentComment[0] + 1; // 부모보다 1 깊어짐
+                group_id = parentComment[1]; // 부모의 group_id 상속
 
-                depth = parentDepth + 1;
-                group_id = parentGroupId; // 부모의 group_id 상속
-
-                // ORDER_IN_GROUP 계산: 해당 그룹 내에서 가장 마지막에 추가
-                // 동일한 group_id를 가지면서 parent_no가 이 댓글의 parent_no인 댓글들 중
-                // 가장 큰 order_in_group을 찾아 +1 합니다.
-                const maxOrderInGroupResult = await connection.execute(
-                    `SELECT NVL(MAX(ORDER_IN_GROUP), 0) FROM BBSW WHERE GROUP_ID = :group_id AND PARENT_NO = :parent_no`,
-                    { group_id: group_id, parent_no: parent_no }
+                // ORDER_IN_GROUP 계산: 동일 group_id 내에서 마지막 순서값 + 1
+                const maxOrderResult = await connection.execute(
+                    "SELECT NVL(MAX(ORDER_IN_GROUP), 0) FROM BBSW WHERE GROUP_ID = :group_id",
+                    { group_id: group_id }
                 );
-                order_in_group = maxOrderInGroupResult.rows[0][0] + 1;
-                console.log(`[Info] /wsave: 대댓글 (NO:${newCommentNo}) - DEPTH: ${depth}, GROUP_ID: ${group_id}, ORDER_IN_GROUP: ${order_in_group}`);
+                order_in_group = maxOrderResult.rows[0][0] + 1;
 
             } else {
-                // 부모 댓글을 찾을 수 없는 경우 (예외 상황), 최상위 댓글로 간주하고 경고
                 console.warn(`[Warning] /wsave: 부모 댓글 (NO: ${parent_no})를 찾을 수 없음. 최상위 댓글로 처리.`);
-                parent_no = null; // 최상위 댓글로 간주
-                depth = 0;
-                group_id = newCommentNo; // 자신의 NO를 group_id로
-                
-                // 최상위 댓글의 order_in_group은 해당 게시글 내 최상위 댓글 중 가장 마지막에 위치
-                const maxTopOrderResult = await connection.execute(
-                    `SELECT NVL(MAX(ORDER_IN_GROUP), 0) FROM BBSW WHERE BBS_NO = :bbs_no AND PARENT_NO IS NULL`,
-                    { bbs_no: bbsno }
-                );
-                order_in_group = maxTopOrderResult.rows[0][0] + 1;
-                console.log(`[Info] /wsave: 최상위 댓글 (NO:${newCommentNo}) - DEPTH: ${depth}, GROUP_ID: ${group_id}, ORDER_IN_GROUP: ${order_in_group}`);
+                // 부모를 찾지 못해도 기본값(최상위 댓글)으로 진행하며, order_in_group은 0으로 유지
             }
-        } else { // **최상위 댓글인 경우**
-            console.log(`[Info] /wsave: 최상위 댓글 작성 시도 (게시글 NO: ${bbsno})`);
-            depth = 0;
-            group_id = newCommentNo; // 자신의 NO를 group_id로
-            
-            // 최상위 댓글의 ORDER_IN_GROUP은 해당 게시글 내 최상위 댓글 중 가장 마지막에 추가
-            const maxTopOrderResult = await connection.execute(
-                `SELECT NVL(MAX(ORDER_IN_GROUP), 0) FROM BBSW WHERE BBS_NO = :bbs_no AND PARENT_NO IS NULL`,
-                { bbs_no: bbsno }
-            );
-            order_in_group = maxTopOrderResult.rows[0][0] + 1;
+            console.log(`[Info] /wsave: 대댓글 (NO:${newCommentNo}) - DEPTH: ${depth}, GROUP_ID: ${group_id}, ORDER_IN_GROUP: ${order_in_group}`);
+        } else { // 최상위 댓글인 경우
+            // 최상위 댓글의 경우 ORDER_IN_GROUP은 보통 0 또는 1로 시작
+            // 여기서는 0으로 유지
             console.log(`[Info] /wsave: 최상위 댓글 (NO:${newCommentNo}) - DEPTH: ${depth}, GROUP_ID: ${group_id}, ORDER_IN_GROUP: ${order_in_group}`);
         }
 
         // 2. BBSW 테이블에 댓글 삽입
         const insertSql = `
-            INSERT INTO BBSW (NO, BBS_NO, WRITER, CONTENT, REGDATE, PARENT_NO, DEPTH, GROUP_ID, ORDER_IN_GROUP, OK, WCOUNT, GOOD, BAD)
-            VALUES (:no, :bbs_no, :writer, :content, SYSDATE, :parent_no, :depth, :group_id, :order_in_group, 1, 0, 0, 0)
-        `; // OK, WCOUNT, GOOD, BAD 초기값 설정
+            INSERT INTO BBSW (NO, BBS_NO, WRITER, CONTENT, REGDATE, PARENT_NO, DEPTH, GROUP_ID, OK, WCOUNT, GOOD, BAD, ORDER_IN_GROUP)
+            VALUES (:no, :bbs_no, :writer, :content, SYSDATE, :parent_no, :depth, :group_id, 1, 0, 0, 0, :order_in_group)
+        `;
         const binds = {
             no: newCommentNo,
             bbs_no: bbsno,
@@ -566,73 +608,102 @@ router.post('/wsave', async function(req, res, next){
             parent_no: parent_no,
             depth: depth,
             group_id: group_id,
-            order_in_group: order_in_group
+            order_in_group: order_in_group, // ORA-01400 해결! 이 값에 NULL이 아닌 유효한 값을 넣어줍니다.
         };
-
         const result = await connection.execute(insertSql, binds);
         console.log(`[Success] /wsave: 댓글 삽입 성공. Rows affected: ${result.rowsAffected}`);
 
+        await connection.commit(); // 모든 작업이 성공하면 커밋
         res.redirect("/bbs/read?brdno=" + bbsno);
 
     } catch (err) {
         console.error(`[Error] /wsave: 댓글 저장 중 오류 발생: ${err.message}`, err.stack);
+        if (connection) {
+            try { await connection.rollback(); }
+            catch (e) { console.error(`[Error] /wsave: Rollback failed: ${e.message}`, e.stack); }
+        }
         res.render('bbs/error', {errcode : 500}); // 서버 오류
     } finally {
         if (connection) {
-            try { await connection.close(); }
+            try { await connection.close(); } // 연결 해제
             catch (e) { console.error(`[Error] /wsave: DB 연결 해제 중 오류: ${e.message}`, e.stack); }
         }
     }
 });
 
+router.get('/w_delete', async function(req, res, next) {
+    const commentNo = req.query.commentNo;
+    const bbsno = req.query.bbsno;
+    const writer = req.session.user ? req.session.user.id : null;
+    let code = 0;
+    let connection;
 
-router.get('/w_delete', async function(req, res, next){
-    const commentNo = req.query.commentNo; // 삭제할 댓글의 NO (read.ejs에서 넘어옴)
-    const bbsno = req.query.bbsno;       // 삭제 후 돌아갈 게시글의 NO (read.ejs에서 넘어옴)
-
-    console.log(`[Info] /w_delete: 댓글 삭제 요청 (댓글 NO: ${commentNo}, 게시글 NO: ${bbsno})`);
-
-    // 로그인 여부 확인
-    if (!req.session.user) {
-        console.warn(`[Warning] /w_delete: 로그인되지 않은 사용자 댓글 삭제 시도. IP: ${req.ip}`);
-        return res.render('bbs/error', { errcode: 5 }); // errcode 5: 로그인 필요
+    if (!writer) {
+        code = 5; // 로그인 필요
+        return res.render('bbs/error', { errcode: code });
     }
 
-    let connection;
     try {
         connection = await oracledb.getConnection(dbconfig);
+        await connection.execute('SET TRANSACTION ISOLATION LEVEL READ COMMITTED');
 
-        // 1. 댓글 작성자 확인 (권한 확인)
-        const checkWriterSql = `SELECT WRITER FROM BBSW WHERE NO = :commentNo`;
-        const checkResult = await connection.execute(checkWriterSql, { commentNo: commentNo });
+        // 1. 해당 댓글의 정보 (writer) 조회
+        const commentResult = await connection.execute(
+            `SELECT WRITER FROM BBSW WHERE NO = :commentNo`,
+            { commentNo: commentNo }
+        );
 
-        if (checkResult.rows.length === 0) {
+        if (commentResult.rows.length === 0) {
             console.warn(`[Warning] /w_delete: 댓글 (NO: ${commentNo})을 찾을 수 없음.`);
-            return res.render('bbs/error', { errcode: 404 }); // errcode 404: 댓글 없음
+            code = 404; // 댓글 없음
+            return res.render('bbs/error', { errcode: code });
         }
 
-        const commentWriter = checkResult.rows[0][0];
-        if (commentWriter !== req.session.user.id) {
-            console.warn(`[Warning] /w_delete: 권한 없는 사용자 댓글 삭제 시도. 사용자: ${req.session.user.id}, 댓글 작성자: ${commentWriter}`);
-            return res.render('bbs/error', { errcode: 403 }); // errcode 403: 권한 없음
+        const commentWriter = commentResult.rows[0][0];
+
+        // 2. 작성자 본인 확인
+        if (commentWriter !== writer) {
+            console.warn(`[Warning] /w_delete: 댓글 삭제 권한 없음. 요청자: ${writer}, 댓글 작성자: ${commentWriter}`);
+            code = 403; // 권한 없음
+            return res.render('bbs/error', { errcode: code });
         }
 
-        // 2. 논리적 삭제: OK 값을 0으로 업데이트
-        const updateSql = `UPDATE BBSW SET OK = 0 WHERE NO = :commentNo`;
-        const result = await connection.execute(updateSql, { commentNo: commentNo });
+        // 3. 해당 댓글이 대댓글을 가지고 있는지 확인 (자식 댓글 존재 여부)
+        const hasChildrenResult = await connection.execute(
+            `SELECT COUNT(*) FROM BBSW WHERE PARENT_NO = :commentNo`,
+            { commentNo: commentNo }
+        );
+        const hasChildren = hasChildrenResult.rows[0][0] > 0;
 
-        if (result.rowsAffected > 0) {
-            console.log(`[Success] /w_delete: 댓글 (NO: ${commentNo}) 논리적으로 삭제됨. (OK=0)`);
+        let deleteSql;
+        let deleteBinds;
+
+        if (hasChildren) {
+            // 자식 댓글이 있는 경우: OK (상태) 값을 0으로 업데이트 (삭제 표시)
+            deleteSql = `UPDATE BBSW SET OK = 0, CONTENT = '삭제된 댓글입니다.' WHERE NO = :commentNo`;
+            deleteBinds = { commentNo: commentNo };
+            console.log(`[Info] /w_delete: 댓글 (NO: ${commentNo})에 자식 댓글이 있어 상태를 '삭제됨'으로 변경.`);
         } else {
-            console.warn(`[Warning] /w_delete: 댓글 (NO: ${commentNo}) 논리적 삭제 실패. 영향을 받은 행 없음.`);
+            // 자식 댓글이 없는 경우: 실제 삭제
+            deleteSql = `DELETE FROM BBSW WHERE NO = :commentNo`;
+            deleteBinds = { commentNo: commentNo };
+            console.log(`[Info] /w_delete: 댓글 (NO: ${commentNo})에 자식 댓글이 없어 물리적으로 삭제.`);
+
+            // !!! ORDER_IN_GROUP 밀어내기 로직은 더 이상 필요 없습니다. 제거 !!!
         }
         
-        // 댓글 삭제 후 게시글 페이지로 리디렉션
+        await connection.execute(deleteSql, deleteBinds);
+        await connection.commit();
+
         res.redirect(`/bbs/read?brdno=${bbsno}`);
 
     } catch (err) {
         console.error(`[Error] /w_delete: 댓글 삭제 중 오류 발생: ${err.message}`, err.stack);
-        res.render('bbs/error', { errcode: 500 }); // errcode 500: 서버 오류
+        if (connection) {
+            try { await connection.rollback(); }
+            catch (e) { console.error(`[Error] /w_delete: Rollback failed: ${e.message}`, e.stack); }
+        }
+        res.render('bbs/error', { errcode: 500 });
     } finally {
         if (connection) {
             try { await connection.close(); }
@@ -642,11 +713,10 @@ router.get('/w_delete', async function(req, res, next){
 });
 
 router.get('/find_id', function(req, res, next) {
-    res.render('bbs/forgot_id', { message: null, messageType: null });
+    res.render('bbs/find_id');
 });
 
-// POST /bbs/find_id - 이름으로 아이디 찾기 처리
-router.post('/find_id', async function(req, res, next) {
+router.post('/find_id', async function(req, res, next) { // async 추가
     const { name } = req.body; // 폼에서 전송된 이름
 
     if (!name || name.trim() === '') {
@@ -688,61 +758,81 @@ router.post('/find_id', async function(req, res, next) {
     }
 });
 
-// GET /bbs/reset_password_request - 비밀번호 재설정 요청 폼 렌더링
-// 이 라우트는 아이디/이름/이메일 입력 폼을 보여줍니다.
 router.get('/reset_password_request', function(req, res, next) {
-    res.render('bbs/reset_password_request', { message: null, messageType: null });
+    res.render('bbs/reset_password_request');
 });
 
-// POST /bbs/reset_password - 아이디/이름/이메일 일치 확인 후 비밀번호 재설정
-router.post('/reset_password', async function(req, res, next) {
-    const { id, name, email, newPassword, confirmPassword } = req.body;
+router.post('/reset_password_request', async function(req, res, next) { // async 추가
+    var id = req.body.id;
+    var email = req.body.email;
+    var code = 0;
+
     let connection;
-
-    // 1. 필수 입력값 검사
-    if (!id || !name || !email || !newPassword || !confirmPassword ||
-        id.trim() === '' || name.trim() === '' || email.trim() === '' ||
-        newPassword.trim() === '' || confirmPassword.trim() === '') {
-        return res.render('bbs/reset_password_request', {
-            message: "모든 필드를 입력해주세요.",
-            messageType: 'error'
-        });
-    }
-
-    // 2. 새 비밀번호와 확인 비밀번호 일치 여부 검사
-    if (newPassword !== confirmPassword) {
-        return res.render('bbs/reset_password_request', {
-            message: "새 비밀번호와 확인 비밀번호가 일치하지 않습니다.",
-            messageType: 'error'
-        });
-    }
-
-    // 3. 비밀번호 길이 검사 (예시: 최소 6자)
-    if (newPassword.length < 6) {
-        return res.render('bbs/reset_password_request', {
-            message: "새 비밀번호는 최소 6자 이상이어야 합니다.",
-            messageType: 'error'
-        });
-    }
-
     try {
         connection = await oracledb.getConnection(dbconfig);
 
-        // 4. 아이디, 이름, 이메일 주소 일치 여부 확인
-        const checkSql = "SELECT ID FROM LOGIN WHERE ID = :id AND NAME = :name AND EMAIL = :email";
-        const checkResult = await connection.execute(checkSql, { id, name, email });
+        var sql = "SELECT ID FROM LOGIN WHERE ID = :id AND EMAIL = :email AND OK = 1"; // 활성화된 계정만 조회
+        const result = await connection.execute(sql, { id: id, email: email });
+
+        if (result.rows.length > 0) {
+            // ID와 이메일이 일치하면 비밀번호 재설정 페이지로 리다이렉트
+            res.redirect('/bbs/reset_password?id=' + id);
+        } else {
+            code = 1; // ID 또는 이메일 불일치
+            res.render('bbs/reset_password_request', { errcode: code });
+        }
+    } catch (err) {
+        console.error("Error checking ID and email:", err);
+        res.render('bbs/error', { errcode: 500 });
+    } finally {
+        if (connection) {
+            try { await connection.close(); } catch (e) { console.error(e); }
+        }
+    }
+});
+
+router.get('/reset_password', function(req, res, next) {
+    var id = req.query.id;
+    if (!id) {
+        return res.redirect('/bbs/reset_password_request'); // ID 없으면 요청 페이지로
+    }
+    res.render('bbs/reset_password', { id: id, errcode: 0 });
+});
+
+router.post('/reset_password', async function(req, res, next) { // async 추가
+    var id = req.body.id;
+    var newPw = req.body.new_password;
+    var confirmPw = req.body.confirm_password;
+    var code = 0;
+
+    if (newPw !== confirmPw) {
+        code = 1; // 비밀번호 불일치
+        return res.render('bbs/reset_password', { id: id, errcode: code });
+    }
+    if (!newPw || newPw.trim() === '') {
+        code = 2; // 비밀번호 공백
+        return res.render('bbs/reset_password', { id: id, errcode: code });
+    }
+
+    let connection;
+    try {
+        connection = await oracledb.getConnection(dbconfig);
+        await connection.execute('SET TRANSACTION ISOLATION LEVEL READ COMMITTED');
+
+        // 4. 아이디, 이름, 이메일 주소 일치 여부 확인 (이전 find_id와 reset_password_request에서 이미 확인했으므로 여기서는 생략 가능하지만, 보안상 다시 확인하는 것도 좋음)
+        // 여기서는 이미 id가 넘어왔으므로, 해당 id의 salt를 가져와 비밀번호를 업데이트합니다.
+        const checkSql = "SELECT ID FROM LOGIN WHERE ID = :id AND OK = 1"; // 활성화된 계정만 조회
+        const checkResult = await connection.execute(checkSql, { id });
 
         if (checkResult.rows.length === 0) {
-            console.warn(`[Warning] 비밀번호 재설정: 입력 정보 불일치 - ID: ${id}, Name: ${name}, Email: ${email}`);
-            return res.render('bbs/reset_password_request', {
-                message: "입력하신 정보와 일치하는 계정을 찾을 수 없습니다.",
-                messageType: 'error'
-            });
+            console.warn(`[Warning] 비밀번호 재설정: 입력 정보 불일치 - ID: ${id}`);
+            code = 3; // 사용자 정보를 찾을 수 없음
+            return res.render('bbs/reset_password', { id: id, errcode: code });
         }
 
         // 5. 새로운 비밀번호로 업데이트
         const salt = Math.round(new Date().valueOf() * Math.random()) + "";
-        const hashPassword = crypto.createHash("sha512").update(newPassword + salt).digest("base64");
+        const hashPassword = crypto.createHash("sha512").update(newPw + salt).digest("base64");
 
         const updateSql = `UPDATE LOGIN SET PASSWORD = :hashPassword, SALT = :salt WHERE ID = :id`;
         const updateResult = await connection.execute(updateSql, { hashPassword, salt, id });
@@ -751,13 +841,17 @@ router.post('/reset_password', async function(req, res, next) {
             throw new Error("비밀번호 업데이트에 실패했습니다. 데이터베이스 오류.");
         }
 
+        await connection.commit();
         console.log(`[Success] 비밀번호 재설정 완료: 사용자 ${id}`);
-        // 비밀번호 재설정 성공 시 로그인 페이지로 리다이렉트
-        res.redirect('/bbs/login?message=' + encodeURIComponent("비밀번호가 성공적으로 재설정되었습니다. 새 비밀번호로 로그인해주세요.") + '&messageType=success');
+        res.render('bbs/login', { message: "비밀번호가 성공적으로 재설정되었습니다. 새 비밀번호로 로그인해주세요.", errcode: 0 });
 
     } catch (err) {
         console.error("비밀번호 재설정 처리 중 오류:", err);
-        res.render('bbs/reset_password_request', {
+        if (connection) {
+            try { await connection.rollback(); }
+            catch (e) { console.error(e); }
+        }
+        res.render('bbs/error', {
             message: "비밀번호 재설정 중 오류가 발생했습니다. 다시 시도해주세요.",
             messageType: 'error'
         });
@@ -769,142 +863,244 @@ router.post('/reset_password', async function(req, res, next) {
 });
 
 
-router.get('/w_vote', async function(req, res, next) {
+router.post('/w_vote', async function(req, res, next) {
     const commentNo = req.query.commentNo;
     const voteType = parseInt(req.query.voteType); // 1: 좋아요, 0: 싫어요
-    const bbsno = req.query.bbsno; // 좋아요/싫어요 후 돌아갈 게시글의 NO
+    const bbsno = req.query.bbsno; // 게시글 번호
+    const userId = req.session.user ? req.session.user.id : null;
 
-    if (!req.session.user) {
-        console.warn(`[Warning] /w_vote: 로그인되지 않은 사용자 투표 시도. IP: ${req.ip}`);
-        return res.render('bbs/error', { errcode: 5 }); // errcode 5: 로그인 필요
+    if (!userId) {
+        return res.render('bbs/error', { errcode: 5 }); // 로그인 필요
     }
 
-    const userId = req.session.user.id;
     let connection;
-
     try {
         connection = await oracledb.getConnection(dbconfig);
+        await connection.execute('SET TRANSACTION ISOLATION LEVEL READ COMMITTED');
 
-        // 1. 이미 투표했는지 확인
-        const checkVoteSql = `SELECT VOTE_TYPE FROM BBSW_LIKES WHERE USER_ID = :userId AND COMMENT_NO = :commentNo`;
-        const checkResult = await connection.execute(checkVoteSql, { userId: userId, commentNo: commentNo });
+        // 1. 사용자가 이미 해당 댓글에 투표했는지 확인
+        const [existingVote] = await connection.execute(
+            `SELECT VOTE_TYPE FROM BBSW_LIKES WHERE USER_ID = :userId AND COMMENT_NO = :commentNo`,
+            { userId: userId, commentNo: commentNo }
+        );
 
-        let updateSql = '';
-        let message = '';
-
-        if (checkResult.rows.length > 0) {
-            // 이미 투표한 경우
-            const existingVoteType = checkResult.rows[0][0];
-
-            if (existingVoteType === voteType) {
-                // 같은 종류의 투표를 다시 누른 경우 -> 투표 취소 (좋아요 -> 좋아요 다시 누르면 취소)
-                const deleteVoteSql = `DELETE FROM BBSW_LIKES WHERE USER_ID = :userId AND COMMENT_NO = :commentNo`;
-                await connection.execute(deleteVoteSql, { userId: userId, commentNo: commentNo });
-
-                if (voteType === 1) { // 좋아요 취소
-                    updateSql = `UPDATE BBSW SET GOOD = GOOD - 1 WHERE NO = :commentNo`;
-                    message = '좋아요를 취소했습니다.';
-                } else { // 싫어요 취소
-                    updateSql = `UPDATE BBSW SET BAD = BAD - 1 WHERE NO = :commentNo`;
-                    message = '싫어요를 취소했습니다.';
-                }
-                await connection.execute(updateSql, { commentNo: commentNo });
-                console.log(`[Success] /w_vote: 댓글 (NO:${commentNo}) ${message} 사용자: ${userId}`);
-            } else {
-                // 다른 종류의 투표를 누른 경우 -> 투표 변경 (좋아요 -> 싫어요 또는 싫어요 -> 좋아요)
-                const updateVoteSql = `UPDATE BBSW_LIKES SET VOTE_TYPE = :voteType, REGDATE = SYSDATE WHERE USER_ID = :userId AND COMMENT_NO = :commentNo`;
-                await connection.execute(updateVoteSql, { voteType: voteType, userId: userId, commentNo: commentNo });
-
-                if (voteType === 1) { // 싫어요 -> 좋아요
-                    updateSql = `UPDATE BBSW SET BAD = BAD - 1, GOOD = GOOD + 1 WHERE NO = :commentNo`;
-                    message = '싫어요를 좋아요로 변경했습니다.';
-                } else { // 좋아요 -> 싫어요
-                    updateSql = `UPDATE BBSW SET GOOD = GOOD - 1, BAD = BAD + 1 WHERE NO = :commentNo`;
-                    message = '좋아요를 싫어요로 변경했습니다.';
-                }
-                await connection.execute(updateSql, { commentNo: commentNo });
-                console.log(`[Success] /w_vote: 댓글 (NO:${commentNo}) ${message} 사용자: ${userId}`);
-            }
-        } else {
-            // 처음 투표하는 경우
-            const insertVoteSql = `INSERT INTO BBSW_LIKES (USER_ID, COMMENT_NO, VOTE_TYPE, REGDATE) VALUES (:userId, :commentNo, :voteType, SYSDATE)`;
-            await connection.execute(insertVoteSql, { userId: userId, commentNo: commentNo, voteType: voteType });
-
-            if (voteType === 1) { // 좋아요
-                updateSql = `UPDATE BBSW SET GOOD = GOOD + 1 WHERE NO = :commentNo`;
-                message = '좋아요를 등록했습니다.';
-            } else { // 싫어요
-                updateSql = `UPDATE BBSW SET BAD = BAD + 1 WHERE NO = :commentNo`;
-                message = '싫어요를 등록했습니다.';
-            }
-            await connection.execute(updateSql, { commentNo: commentNo });
-            console.log(`[Success] /w_vote: 댓글 (NO:${commentNo}) ${message} 사용자: ${userId}`);
+        let currentGood = 0;
+        let currentBad = 0;
+        const [currentVotes] = await connection.execute(
+            `SELECT GOOD, BAD FROM BBSW WHERE NO = :commentNo`,
+            { commentNo: commentNo }
+        );
+        if (currentVotes.rows.length > 0) {
+            currentGood = currentVotes.rows[0][0];
+            currentBad = currentVotes.rows[0][1];
         }
 
+        if (existingVote.rows.length > 0) {
+            // 2. 이미 투표한 경우: 변경 또는 취소
+            const previousVoteType = existingVote.rows[0][0];
+
+            if (previousVoteType === voteType) {
+                // 2-1. 같은 종류의 투표를 다시 누른 경우: 투표 취소
+                await connection.execute(
+                    `DELETE FROM BBSW_LIKES WHERE USER_ID = :userId AND COMMENT_NO = :commentNo`,
+                    { userId: userId, commentNo: commentNo }
+                );
+                if (voteType === 1) { // 좋아요 취소
+                    await connection.execute(`UPDATE BBSW SET GOOD = GOOD - 1 WHERE NO = :commentNo`, { commentNo: commentNo });
+                } else { // 싫어요 취소
+                    await connection.execute(`UPDATE BBSW SET BAD = BAD - 1 WHERE NO = :commentNo`, { commentNo: commentNo });
+                }
+                console.log(`[Info] 투표 취소: Comment ${commentNo}, User ${userId}, Type ${voteType}`);
+            } else {
+                // 2-2. 다른 종류의 투표를 누른 경우: 투표 변경 (기존 투표 취소 후 새 투표 등록)
+                await connection.execute(
+                    `UPDATE BBSW_LIKES SET VOTE_TYPE = :voteType WHERE USER_ID = :userId AND COMMENT_NO = :commentNo`,
+                    { voteType: voteType, userId: userId, commentNo: commentNo }
+                );
+                if (voteType === 1) { // 싫어요 -> 좋아요
+                    await connection.execute(`UPDATE BBSW SET BAD = BAD - 1, GOOD = GOOD + 1 WHERE NO = :commentNo`, { commentNo: commentNo });
+                } else { // 좋아요 -> 싫어요
+                    await connection.execute(`UPDATE BBSW SET GOOD = GOOD - 1, BAD = BAD + 1 WHERE NO = :commentNo`, { commentNo: commentNo });
+                }
+                console.log(`[Info] 투표 변경: Comment ${commentNo}, User ${userId}, From ${previousVoteType} To ${voteType}`);
+            }
+        } else {
+            // 3. 처음 투표하는 경우: 투표 기록 추가
+            await connection.execute(
+                `INSERT INTO BBSW_LIKES (USER_ID, COMMENT_NO, VOTE_TYPE) VALUES (:userId, :commentNo, :voteType)`,
+                { userId: userId, commentNo: commentNo, voteType: voteType }
+            );
+            if (voteType === 1) { // 좋아요
+                await connection.execute(`UPDATE BBSW SET GOOD = GOOD + 1 WHERE NO = :commentNo`, { commentNo: commentNo });
+            } else { // 싫어요
+                await connection.execute(`UPDATE BBSW SET BAD = BAD + 1 WHERE NO = :commentNo`, { commentNo: commentNo });
+            }
+            console.log(`[Info] 새 투표: Comment ${commentNo}, User ${userId}, Type ${voteType}`);
+        }
+
+        await connection.commit();
         res.redirect(`/bbs/read?brdno=${bbsno}`);
 
     } catch (err) {
-        console.error(`[Error] /w_vote: 투표 처리 중 오류 발생: ${err.message}`, err.stack);
+        console.error(`[Error] 투표 처리 중 오류 발생: ${err.message}`, err.stack);
+        if (connection) {
+            try { await connection.rollback(); }
+            catch (e) { console.error(`[Error] Rollback failed: ${e.message}`, e.stack); }
+        }
         res.render('bbs/error', { errcode: 500 });
     } finally {
         if (connection) {
             try { await connection.close(); }
-            catch (e) { console.error(`[Error] /w_vote: DB 연결 해제 중 오류: ${e.message}`, e.stack); }
+            catch (e) { console.error(`[Error] DB 연결 해제 중 오류: ${e.message}`, e.stack); }
         }
     }
 });
 
-
-router.get('/update',function(req,res,next) {
-    oracledb.getConnection(dbconfig,function(err,connection){
-        var sql = "SELECT NO, TITLE, CONTENT, WRITER, to_char(REGDATE,'yyyy-mm-dd') FROM BBS WHERE NO="+req.query.brdno;
- 
-        connection.execute(sql,function(err,rows){
-            if(err) console.error("err : "+ err);
- 
-            res.render('bbs/updateform',rows);
-            connection.release();
-       });
-    });
+router.get('/update', async function(req,res,next) { // async 추가
+    if(req.session.user)
+    {
+        let connection;
+        try {
+            connection = await oracledb.getConnection(dbconfig);
+            var sql = "SELECT NO, TITLE, CONTENT, WRITER, FILE_PATH, ORIGINAL_FILE_NAME FROM BBS WHERE NO="+req.query.brdno;
+            const rows = await connection.execute(sql); // await 사용
+            
+            res.render('bbs/update', {data:rows});
+        } catch (err) {
+            console.error("err : "+ err);
+            res.render('bbs/error', { errcode: 500 });
+        } finally {
+            if (connection) {
+                try { await connection.close(); }
+                catch (e) { console.error(e); }
+            }
+        }
+    }
+    else
+    {
+        res.redirect('/bbs/list');
+    }
 });
-
-router.get('/delete', function(req,res,next){
-    oracledb.getConnection(dbconfig,function(err,connection){
-      var sql = "UPDATE BBS SET OK=0" +
-                " WHERE NO=" + req.query.brdno;
-      console.log("row : "+ req.query.brdno);
+router.post('/delete', async function(req,res,next){ // async 추가
+    let connection;
+    try {
+        connection = await oracledb.getConnection(dbconfig);
+        var sql = "UPDATE BBS SET OK=0" +
+                " WHERE NO=" + req.body.brdno;
+        console.log("row : "+ req.body.brdno);
  
-      connection.execute(sql,function(err,rows){
-        if(err) console.error("err : "+ err);
+        await connection.execute(sql, { autoCommit: true }); // await 사용
  
         res.redirect('/bbs/list');
-        connection.release();
-      });
-    });
-});
-    
-
-router.post('/updatesave',function(req,res,next){
-    oracledb.getConnection(dbconfig,function(err,connection){
-        var sql = "";
-        if(req.body.brdno){
-            sql="UPDATE BBS"+
-                  " SET TITLE= '" + req.body.brdtitle + "', CONTENT='" + req.body.brdmemo+"', WRITER='" + req.body.brdwriter+"' " 
-                  + "WHERE NO=" + req.body.brdno;
+    } catch (err) {
+        console.error("err : "+ err);
+        res.render('bbs/error', { errcode: 500 });
+    } finally {
+        if (connection) {
+            try { await connection.close(); }
+            catch (e) { console.error(e); }
         }
-        console.log("sql : " + sql);
-        connection.execute(sql,function(err,rows){
-            if(err) console.error("err : "+ err);
+    }
+});
+// 게시글 수정 (파일 업로드 처리 추가)
+router.post('/updatesave', upload.single('userfile'), async function(req, res, next) { // async 추가
+    const { brdno, brdtitle, brdmemo, brdwriter, existing_file_path } = req.body;
+    let code = 0;
+    let connection;
 
-            res.redirect('/bbs/list');
-            connection.release();
-        });
-    });
+    // 서버 측 유효성 검사
+    if (!brdtitle || brdtitle.trim() === '') {
+        code = 7; // 에러 코드 7: 제목 필수
+        return res.render('bbs/error', { errcode: code, message: "제목은 필수 입력 사항입니다." });
+    }
+    if (!brdmemo || brdmemo.trim() === '') {
+        code = 8; // 에러 코드 8: 내용 필수
+        return res.render('bbs/error', { errcode: code, message: "내용은 필수 입력 사항입니다." });
+    }
+
+    try {
+        connection = await oracledb.getConnection(dbconfig);
+
+        let filePath = existing_file_path || null; // 기존 파일 경로 유지
+        let originalFileName = null; // 기존 파일 이름 유지
+
+        // 파일 업로드 유효성 검사 오류 처리
+        if (req.fileValidationError) {
+            if (connection) connection.release();
+            return res.render('bbs/error', { errcode: 400, message: req.fileValidationError.message });
+        }
+
+        // 새로운 파일이 업로드된 경우
+        if (req.file) {
+            filePath = '/uploads/' + req.file.filename;
+            originalFileName = req.file.originalname;
+
+            // 기존 파일이 있었다면 삭제
+            if (existing_file_path) {
+                const oldFilePath = path.join(UPLOAD_DIR, path.basename(existing_file_path));
+                fs.unlink(oldFilePath, (unlinkErr) => {
+                    if (unlinkErr) console.error("Error deleting old file:", unlinkErr);
+                    else console.log(`Old file ${oldFilePath} deleted.`);
+                });
+            }
+        } else if (req.body.delete_file === 'on') {
+            // 파일 삭제 체크박스가 선택된 경우
+            if (existing_file_path) {
+                const oldFilePath = path.join(UPLOAD_DIR, path.basename(existing_file_path));
+                fs.unlink(oldFilePath, (unlinkErr) => {
+                    if (unlinkErr) console.error("Error deleting old file:", unlinkErr);
+                    else console.log(`Old file ${oldFilePath} deleted by user request.`);
+                });
+            }
+            filePath = null; // DB에서 파일 경로 제거
+            originalFileName = null;
+        }
+
+        const sql = `
+            UPDATE BBS
+            SET TITLE = :title,
+                CONTENT = :content,
+                WRITER = :writer,
+                FILE_PATH = :filePath,
+                ORIGINAL_FILE_NAME = :originalFileName
+            WHERE NO = :brdno
+        `;
+
+        const binds = {
+            title: brdtitle,
+            content: brdmemo,
+            writer: brdwriter,
+            filePath: filePath,
+            originalFileName: originalFileName,
+            brdno: brdno
+        };
+
+        const result = await connection.execute(sql, binds, { autoCommit: true }); // Multer 업로드 후에는 autoCommit 유지해도 무방 (단일 작업)
+        console.log("Rows affected:", result.rowsAffected);
+        res.redirect('/bbs/list');
+
+    } catch (err) {
+        console.error("DB execute error:", err);
+        // 오류 발생 시 새로 업로드된 파일 삭제 (있을 경우)
+        if (req.file) {
+            fs.unlink(req.file.path, (unlinkErr) => {
+                if (unlinkErr) console.error("Error deleting uploaded file:", unlinkErr);
+            });
+        }
+        res.render('bbs/error', { errcode: 500 });
+    } finally {
+        if (connection) {
+            try { connection.release(); }
+            catch (e) { console.error(e); }
+        }
+    }
 });
 
-router.get('/search',function(req,res,next){
+router.get('/search', async function(req,res,next){ // async 추가
 
-    oracledb.getConnection(dbconfig,function(err,connection){
+    let connection;
+    try {
+        connection = await oracledb.getConnection(dbconfig);
         var sql;
         if(req.query.choice=="TITLE_CONTENT"){
             sql = "SELECT NO, TITLE, WRITER, CONTENT, to_char(REGDATE,'yyyy-mm-dd hh24:mi:ss'), OK" + 
@@ -913,15 +1109,21 @@ router.get('/search',function(req,res,next){
         }
         else{
             sql = "SELECT NO, TITLE, WRITER, CONTENT, to_char(REGDATE,'yyyy-mm-dd hh24:mi:ss'), OK" + 
-            " FROM BBS WHERE " +req.query.choice +" LIKE '%" + req.query.search + "%'    ORDER BY NO DESC";
+            " FROM BBS WHERE " + req.query.choice + " LIKE '%" + req.query.search + "%' ORDER BY NO DESC";
         }
-        connection.execute(sql,function(err,rows){
-            if(err) console.error("err : "+err);
+        console.log("sql : " + sql);
+        const rows = await connection.execute(sql); // await 사용
 
-            res.render('bbs/list',rows);
-            connection.release();
-        });
-    });
+        res.render('bbs/list', {data:rows});
+    } catch (err) {
+        console.error("err : "+ err);
+        res.render('bbs/error', { errcode: 500 });
+    } finally {
+        if (connection) {
+            try { await connection.close(); }
+            catch (e) { console.error(e); }
+        }
+    }
 });
 
 module.exports = router;
