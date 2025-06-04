@@ -77,7 +77,20 @@
             <tr><td>제목</td><td><%=column[1]%></td></tr>
             <tr><td>내용</td><td><%=column[2]%></td></tr>
             <tr><td>작성 날짜</td><td><%=column[4]%></td></tr>
-            <tr><td>조회수</td><td><%=column[6]%></td></tr> </tbody>
+            <tr><td>조회수</td><td><%=column[6]%></td></tr>
+            <tr>
+                <td>첨부 파일</td>
+                <td>
+                    <% if (column[7] && column[8]) { %>
+                        <a href="<%= column[7] %>" download="<%= column[8] %>">
+                            <%= column[8] %>
+                        </a>
+                    <% } else { %>
+                        첨부 파일 없음
+                    <% } %>
+                </td>
+            </tr>
+        </tbody>
     </table>
     <p>
         <a href="/bbs/list">게시판 홈으로 돌아가기</a> /
