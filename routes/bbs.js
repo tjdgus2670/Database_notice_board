@@ -289,66 +289,158 @@ router.get('/read_count',function(req,res,next){
 
 async function read_bbs(brdno){
   return new Promise(function(resolve,reject) {
-      
       oracledb.getConnection(dbconfig,function(err,connection) {
-
-          var sql = "SELECT NO, TITLE, WRITER, CONTENT, to_char(REGDATE,'yyyy-mm-dd'), OK, COUNT  FROM BBS "+
-                    " WHERE NO ="+brdno;
+          var sql = "SELECT NO, TITLE, WRITER, CONTENT, to_char(REGDATE,'yyyy-mm-dd hh24:mi:ss'), OK, COUNT FROM BBS "+
+                    " WHERE NO = :brdno"; // 바인드 변수 사용
           
-          connection.execute(sql,function(err,retBBS){
-              if(err) console.error("err : " + err);
-                       
-              connection.release();
-              resolve(retBBS);
+          connection.execute(sql, { brdno: brdno }, function(err,retBBS){ // 바인드 변수 전달
+              if(err) {
+                  console.error("err : " + err);
+                  reject(err); // 에러 발생 시 reject
+              } else {
+                  connection.release();
+                  resolve(retBBS);
+              }
           });
       });
   });
 }
 
-
-router.get('/read',function(req,res,next){
+router.get('/read',async function(req,res,next){ // async 추가
   console.log("req.query.brdno :"+req.query.brdno);
 
-  read_bbs(req.query.brdno).then( function(retBBS) {
-    oracledb.getConnection(dbconfig,function(err,connection){
-     
-      var sql = "SELECT NO, BBS_NO, WRITER, CONTENT,  to_char(REGDATE,'yyyy-mm-dd'), WCOUNT, OK" +
-              " FROM BBSW" +
-              " WHERE BBS_NO="+req.query.brdno +
-              " ORDER BY NO DESC";
-     
+  try {
+      const retBBS = await read_bbs(req.query.brdno); // await 사용
+      let connection = await oracledb.getConnection(dbconfig);
+      
+      // 댓글 조회 쿼리 수정: GROUP_ID와 ORDER_IN_GROUP으로 정렬
+      // PARENT_NO, DEPTH, GROUP_ID, ORDER_IN_GROUP 컬럼도 조회에 포함
+      var sql = `
+          SELECT 
+              NO, BBS_NO, WRITER, CONTENT, to_char(REGDATE,'yyyy-mm-dd hh24:mi:ss') AS REGDATE_FORMATTED, 
+              WCOUNT, OK, PARENT_NO, DEPTH, GROUP_ID, ORDER_IN_GROUP, GOOD, BAD
+          FROM BBSW
+          WHERE BBS_NO = :bbs_no
+          ORDER BY GROUP_ID ASC, ORDER_IN_GROUP ASC
+      `; 
+      
       console.log("sql :"+sql);
-      connection.execute(sql,function(err,rows){
-          if(err) console.error("err : "+err);
-          
-          res.render('bbs/read', {bbs:retBBS, wbbs:rows});
-          connection.release();
-      });
-    });
-  });
+      const wbbsRows = await connection.execute(sql, { bbs_no: req.query.brdno }); 
+      
+      res.render('bbs/read', {bbs: retBBS, wbbs: wbbsRows.rows}); // .rows로 데이터 전달
+      connection.release(); // finally 블록으로 이동 가능
+      
+  } catch (err) {
+      console.error("err : "+err);
+      res.render('bbs/error', {errcode: 500}); // 에러 페이지 렌더링
+  } finally {
+      // connection.release()는 finally 블록에서 하는 것이 좋습니다.
+      // if (connection) {
+      //     try { await connection.close(); }
+      //     catch (e) { console.error(e); }
+      // }
+  }
 });
 
-router.post('/wsave',function(req,res,next){
-  var bbsno = req.body.bbsno;
-  var code=0;
-  if( req.session.user )
-  {
-    var sql="INSERT INTO BBSW(NO, BBS_NO, WRITER, CONTENT, REGDATE) VALUES(bbsw_seq.nextval,"
-          + bbsno+",'"+req.session.user.id+"','"+req.body.wbrdmemo+"', sysdate)";
-    console.log("w sql :"+sql);
-    oracledb.getConnection(dbconfig,function(err,connection) {
-        connection.execute(sql,function(err,rows){
-          if(err) console.error("err : "+err);
-          res.redirect("/bbs/read?brdno="+bbsno);
-          connection.release();
-        });
-    });
+router.post('/wsave', async function(req, res, next){
+  var bbsno = req.body.bbsno; // 게시글 NO (hidden input으로 받음)
+  var parent_no = req.body.parent_no || null; // 대댓글이면 부모 댓글 NO, 아니면 null (hidden input으로 받음)
+  var wbrdmemo = req.body.wbrdmemo; // 댓글 내용
+  var writer = req.session.user ? req.session.user.id : null; // 작성자 ID (세션에서)
+  var code = 0;
+
+  if (!writer) {
+      code = 5; // 로그인 안 됨
+      return res.render('bbs/error', {errcode : code});
   }
-  else
-  {
-    code = 5;
-    res.render('bbs/error', {errcode : code});
-    return;
+
+  let connection;
+  try {
+      connection = await oracledb.getConnection(dbconfig);
+      
+      let depth = 0;
+      let group_id;
+      let order_in_group;
+
+      // 1. 새로운 댓글의 NO를 시퀀스로 미리 얻기
+      //    ORACLE의 SEQUENCE는 INSERT 전에 NEXTVAL을 가져올 수 있습니다.
+      const noResult = await connection.execute("SELECT bbsw_seq.nextval FROM DUAL");
+      const newCommentNo = noResult.rows[0][0];
+
+      if (parent_no) { // **대댓글인 경우**
+          // 부모 댓글의 DEPTH와 GROUP_ID를 조회
+          const parentResult = await connection.execute(
+              "SELECT DEPTH, GROUP_ID FROM BBSW WHERE NO = :parent_no",
+              { parent_no: parent_no }
+          );
+
+          if (parentResult.rows.length > 0) {
+              const parentDepth = parentResult.rows[0][0];
+              const parentGroupId = parentResult.rows[0][1];
+
+              depth = parentDepth + 1;
+              group_id = parentGroupId; // 부모의 group_id를 상속
+
+              // 2. ORDER_IN_GROUP 계산: 해당 그룹 내에서 가장 마지막에 추가
+              //    동일한 group_id를 가지면서 parent_no가 이 댓글의 parent_no인 댓글들 중 가장 큰 order_in_group을 찾습니다.
+              //    이 로직은 '대댓글은 항상 부모 댓글 바로 아래에 붙는다'는 시나리오를 가정합니다.
+              //    (만약 깊이별로 순서를 정확히 제어하려면 더 복잡한 로직이 필요합니다.)
+              const maxOrderInGroupResult = await connection.execute(
+                  `SELECT NVL(MAX(ORDER_IN_GROUP), 0) + 1 FROM BBSW WHERE GROUP_ID = :group_id AND PARENT_NO = :parent_no`,
+                  { group_id: group_id, parent_no: parent_no }
+              );
+              order_in_group = maxOrderInGroupResult.rows[0][0];
+          } else {
+              // 부모 댓글을 찾을 수 없는 경우 (예외 상황), 최상위 댓글로 처리
+              console.warn("Parent comment not found, treating as top-level comment.");
+              parent_no = null;
+              depth = 0;
+              group_id = newCommentNo; // 자신의 NO를 group_id로
+              order_in_group = 1;
+          }
+      } else { // **최상위 댓글인 경우**
+          depth = 0;
+          group_id = newCommentNo; // 자신의 NO를 group_id로
+          
+          // 최상위 댓글의 ORDER_IN_GROUP은 해당 게시글 내 최상위 댓글 중 가장 마지막에 위치
+          // 여기서는 간단하게 MAX(ORDER_IN_GROUP) + 1을 사용합니다.
+          // (실제로는 BBS_NO별로 최상위 댓글의 MAX(ORDER_IN_GROUP)을 찾아야 더 정확합니다.)
+          const maxTopOrderResult = await connection.execute(
+              `SELECT NVL(MAX(ORDER_IN_GROUP), 0) + 1 FROM BBSW WHERE BBS_NO = :bbs_no AND PARENT_NO IS NULL`,
+              { bbs_no: bbsno }
+          );
+          order_in_group = maxTopOrderResult.rows[0][0];
+      }
+
+      // 3. BBSW 테이블에 댓글 삽입 (GROUP_ID, ORDER_IN_GROUP, DEPTH 포함)
+      const insertSql = `
+          INSERT INTO BBSW (NO, BBS_NO, WRITER, CONTENT, REGDATE, PARENT_NO, DEPTH, GROUP_ID, ORDER_IN_GROUP)
+          VALUES (:no, :bbs_no, :writer, :content, SYSDATE, :parent_no, :depth, :group_id, :order_in_group)
+      `;
+      const binds = {
+          no: newCommentNo,
+          bbs_no: bbsno,
+          writer: writer,
+          content: wbrdmemo,
+          parent_no: parent_no,
+          depth: depth,
+          group_id: group_id,
+          order_in_group: order_in_group
+      };
+
+      await connection.execute(insertSql, binds);
+
+      res.redirect("/bbs/read?brdno=" + bbsno);
+
+  } catch (err) {
+      console.error("Error saving comment:", err);
+      code = 500; // 서버 오류
+      res.render('bbs/error', {errcode : code});
+  } finally {
+      if (connection) {
+          try { await connection.close(); }
+          catch (e) { console.error(e); }
+      }
   }
 });
 
