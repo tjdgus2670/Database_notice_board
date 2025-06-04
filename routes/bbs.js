@@ -618,6 +618,133 @@ router.get('/w_delete', async function(req, res, next){
     }
 });
 
+router.get('/find_id', function(req, res, next) {
+    res.render('bbs/forgot_id', { message: null, messageType: null });
+});
+
+// POST /bbs/find_id - 이름으로 아이디 찾기 처리
+router.post('/find_id', async function(req, res, next) {
+    const { name } = req.body; // 폼에서 전송된 이름
+
+    if (!name || name.trim() === '') {
+        return res.render('bbs/forgot_id', {
+            message: "이름을 입력해주세요.",
+            messageType: 'error'
+        });
+    }
+
+    let connection;
+    try {
+        connection = await oracledb.getConnection(dbconfig);
+        // 이름으로 아이디를 조회하는 SQL
+        const sql = "SELECT ID FROM LOGIN WHERE NAME = :name";
+        const result = await connection.execute(sql, { name });
+
+        if (result.rows.length > 0) {
+            const userId = result.rows[0][0]; // 찾은 아이디
+            res.render('bbs/forgot_id', {
+                message: `회원님의 아이디는 '${userId}' 입니다.`,
+                messageType: 'success'
+            });
+        } else {
+            res.render('bbs/forgot_id', {
+                message: "입력하신 이름과 일치하는 아이디를 찾을 수 없습니다.",
+                messageType: 'error'
+            });
+        }
+    } catch (err) {
+        console.error("아이디 찾기 처리 중 오류:", err);
+        res.render('bbs/forgot_id', {
+            message: "아이디 찾기 중 오류가 발생했습니다. 다시 시도해주세요.",
+            messageType: 'error'
+        });
+    } finally {
+        if (connection) {
+            try { await connection.close(); } catch (e) { console.error(e); }
+        }
+    }
+});
+
+// GET /bbs/reset_password_request - 비밀번호 재설정 요청 폼 렌더링
+// 이 라우트는 아이디/이름/이메일 입력 폼을 보여줍니다.
+router.get('/reset_password_request', function(req, res, next) {
+    res.render('bbs/reset_password_request', { message: null, messageType: null });
+});
+
+// POST /bbs/reset_password - 아이디/이름/이메일 일치 확인 후 비밀번호 재설정
+router.post('/reset_password', async function(req, res, next) {
+    const { id, name, email, newPassword, confirmPassword } = req.body;
+    let connection;
+
+    // 1. 필수 입력값 검사
+    if (!id || !name || !email || !newPassword || !confirmPassword ||
+        id.trim() === '' || name.trim() === '' || email.trim() === '' ||
+        newPassword.trim() === '' || confirmPassword.trim() === '') {
+        return res.render('bbs/reset_password_request', {
+            message: "모든 필드를 입력해주세요.",
+            messageType: 'error'
+        });
+    }
+
+    // 2. 새 비밀번호와 확인 비밀번호 일치 여부 검사
+    if (newPassword !== confirmPassword) {
+        return res.render('bbs/reset_password_request', {
+            message: "새 비밀번호와 확인 비밀번호가 일치하지 않습니다.",
+            messageType: 'error'
+        });
+    }
+
+    // 3. 비밀번호 길이 검사 (예시: 최소 6자)
+    if (newPassword.length < 6) {
+        return res.render('bbs/reset_password_request', {
+            message: "새 비밀번호는 최소 6자 이상이어야 합니다.",
+            messageType: 'error'
+        });
+    }
+
+    try {
+        connection = await oracledb.getConnection(dbconfig);
+
+        // 4. 아이디, 이름, 이메일 주소 일치 여부 확인
+        const checkSql = "SELECT ID FROM LOGIN WHERE ID = :id AND NAME = :name AND EMAIL = :email";
+        const checkResult = await connection.execute(checkSql, { id, name, email });
+
+        if (checkResult.rows.length === 0) {
+            console.warn(`[Warning] 비밀번호 재설정: 입력 정보 불일치 - ID: ${id}, Name: ${name}, Email: ${email}`);
+            return res.render('bbs/reset_password_request', {
+                message: "입력하신 정보와 일치하는 계정을 찾을 수 없습니다.",
+                messageType: 'error'
+            });
+        }
+
+        // 5. 새로운 비밀번호로 업데이트
+        const salt = Math.round(new Date().valueOf() * Math.random()) + "";
+        const hashPassword = crypto.createHash("sha512").update(newPassword + salt).digest("base64");
+
+        const updateSql = `UPDATE LOGIN SET PASSWORD = :hashPassword, SALT = :salt WHERE ID = :id`;
+        const updateResult = await connection.execute(updateSql, { hashPassword, salt, id });
+
+        if (updateResult.rowsAffected === 0) {
+            throw new Error("비밀번호 업데이트에 실패했습니다. 데이터베이스 오류.");
+        }
+
+        console.log(`[Success] 비밀번호 재설정 완료: 사용자 ${id}`);
+        // 비밀번호 재설정 성공 시 로그인 페이지로 리다이렉트
+        res.redirect('/bbs/login?message=' + encodeURIComponent("비밀번호가 성공적으로 재설정되었습니다. 새 비밀번호로 로그인해주세요.") + '&messageType=success');
+
+    } catch (err) {
+        console.error("비밀번호 재설정 처리 중 오류:", err);
+        res.render('bbs/reset_password_request', {
+            message: "비밀번호 재설정 중 오류가 발생했습니다. 다시 시도해주세요.",
+            messageType: 'error'
+        });
+    } finally {
+        if (connection) {
+            try { await connection.close(); } catch (e) { console.error(e); }
+        }
+    }
+});
+
 
 router.get('/w_vote', async function(req, res, next) {
     const commentNo = req.query.commentNo;

@@ -3,25 +3,156 @@
 <head>
     <meta http-equiv="Content-Type" content="text/html; charset=utf-8"/>
     <title>로그인</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 20px;
+            display: flex;
+            justify-content: center; /* 가운데 정렬 */
+            align-items: center;
+            min-height: 100vh; /* 화면 전체 높이 */
+            background-color: #f4f7f6; /* 배경색 추가 */
+        }
+        .container {
+            width: 400px; /* 컨테이너 너비 조정 */
+            padding: 30px;
+            border: 1px solid #e0e0e0;
+            border-radius: 8px;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1); /* 그림자 강화 */
+            background-color: #fff;
+        }
+        h2 {
+            text-align: center;
+            color: #333;
+            margin-bottom: 25px; /* 제목 아래 여백 */
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-bottom: 25px; /* 테이블 아래 여백 */
+        }
+        td {
+            padding: 12px 0; /* 셀 패딩 조정 */
+            vertical-align: middle;
+        }
+        td:first-child {
+            width: 80px; /* 라벨 너비 */
+            font-weight: bold;
+            color: #555;
+        }
+        input[type="text"],
+        input[type="password"] {
+            width: calc(100% - 24px); /* 패딩 고려 */
+            padding: 10px;
+            border: 1px solid #ccc;
+            border-radius: 5px;
+            font-size: 1em;
+        }
+        input[type="text"]:focus,
+        input[type="password"]:focus {
+            border-color: #007bff;
+            outline: none;
+            box-shadow: 0 0 5px rgba(0, 123, 255, 0.2);
+        }
+
+        /* --- 버튼 및 링크 스타일 통일 --- */
+        .button-group, .utility-links {
+            text-align: center;
+            margin-top: 20px;
+        }
+
+        /* 모든 버튼과 링크에 적용될 기본 스타일 */
+        .action-button, .utility-links a {
+            display: inline-block; /* 인라인 블록으로 정렬 */
+            padding: 10px 20px;
+            border: none;
+            border-radius: 5px;
+            font-size: 1em;
+            cursor: pointer;
+            text-decoration: none; /* 링크 밑줄 제거 */
+            transition: background-color 0.3s ease, color 0.3s ease; /* 호버 효과 부드럽게 */
+            margin: 0 5px; /* 버튼/링크 간 간격 */
+        }
+
+        /* 로그인 버튼 스타일 */
+        .action-button.primary {
+            background-color: #007bff;
+            color: white;
+        }
+        .action-button.primary:hover {
+            background-color: #0056b3;
+        }
+
+        /* 보조 링크 (아이디 찾기, 비밀번호 재설정, 회원가입) 스타일 */
+        .utility-links a {
+            background-color: transparent; /* 배경 없음 */
+            color: #007bff; /* 파란색 텍스트 */
+            border: 1px solid transparent; /* 테두리 투명 */
+            padding: 8px 12px; /* 약간 작은 패딩 */
+        }
+        .utility-links a:hover {
+            background-color: #e9f5ff; /* 호버 시 배경색 */
+            color: #0056b3;
+            text-decoration: none; /* 밑줄 다시 제거 */
+        }
+        .utility-links span {
+            color: #ccc; /* 구분선 색상 */
+            margin: 0 2px; /* 구분선 간격 */
+        }
+
+        /* 메시지 스타일 (기존 유지) */
+        .message {
+            padding: 10px;
+            margin-top: 15px;
+            margin-bottom: 15px;
+            border-radius: 4px;
+            text-align: center;
+        }
+        .message.success { background-color: #d4edda; color: #155724; border-color: #c3e6cb; }
+        .message.error { background-color: #f8d7da; color: #721c24; border-color: #f5c6cb; }
+        .message.info { background-color: #d1ecf1; color: #0c5460; border-color: #bee5eb; }
+    </style>
 </head>
 <body>
-    <% if(errcode == 1) { %> <script> alert('로그인 아이디가 없습니다'); </script> <% } %>
-    <% if(errcode == 2) { %> <script> alert('패스워드가 틀립니다.'); </script> <% } %>
-    <% if(errcode == 3) { %> <script> alert('이미 로그인되어 있습니다.'); window.setTimeout(location.href='http://localhost:3000/bbs/', 1000 );</script> <% } %>
-    <form name="form1" action="/bbs/logincheck" method="post">
-        <table border="1" style="width:600px">
-            <tbody>
-                <tr>
-                    <td>아이디</td>
-                    <td><input type="text" name="id" placeholder="id" value=""></td>
-                </tr>
-                <tr>
-                    <td>패스워드</td>
-                    <td><input type="password" name="password" placeholder="password" value=""></td>
-                </tr>
-            </tbody>
-        </table>
-        <a href="#" onclick="form1.submit()">로그인</a>
-    </form>
+    <div class="container">
+        <h2>로그인</h2>
+
+        <% if(errcode == 1) { %> <script> alert('로그인 아이디가 없습니다'); </script> <% } %>
+        <% if(errcode == 2) { %> <script> alert('패스워드가 틀립니다.'); </script> <% } %>
+        <% if(errcode == 3) { %> <script> alert('이미 로그인되어 있습니다.'); window.setTimeout(function() { location.href='http://localhost:3000/bbs/'; }, 1000 );</script> <% } %>
+        
+        <% /* Added for new message handling from redirects */ %>
+        <% if (typeof message !== 'undefined' && message) { %>
+            <script>
+                alert('<%= message %>');
+            </script>
+        <% } %>
+
+        <form name="form1" action="/bbs/logincheck" method="post">
+            <table>
+                <tbody>
+                    <tr>
+                        <td>아이디</td>
+                        <td><input type="text" name="id" placeholder="id" value="" required></td>
+                    </tr>
+                    <tr>
+                        <td>패스워드</td>
+                        <td><input type="password" name="password" placeholder="password" value="" required></td>
+                    </tr>
+                </tbody>
+            </table>
+            <div class="button-group">
+                <button type="submit" class="action-button primary">로그인</button>
+            </div>
+        </form>
+
+        <div class="utility-links">
+            <a href="/bbs/find_id">아이디 찾기</a>
+            <span>|</span>
+            <a href="/bbs/reset_password_request">비밀번호 재설정</a>
+            <span>|</span>
+            <a href="/bbs/signup">회원가입</a>
+        </div>
+    </div>
 </body>
 </html>

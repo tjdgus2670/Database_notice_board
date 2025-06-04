@@ -1,0 +1,50 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta http-equiv="Content-Type" content="text/html; charset=utf-8"/>
+    <title>아이디 찾기</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 20px; }
+        .container { width: 400px; margin: 50px auto; padding: 20px; border: 1px solid #ccc; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
+        h2 { text-align: center; color: #333; }
+        table { width: 100%; border-collapse: collapse; margin-top: 20px; }
+        td { padding: 10px; border: 1px solid #eee; }
+        input[type="text"] { width: calc(100% - 22px); padding: 10px; border: 1px solid #ddd; border-radius: 4px; }
+        .button-group { text-align: center; margin-top: 20px; }
+        button { padding: 10px 20px; background-color: #007bff; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 16px; }
+        button:hover { background-color: #0056b3; }
+        .message { padding: 10px; margin-top: 15px; border-radius: 4px; text-align: center; }
+        .message.success { background-color: #d4edda; color: #155724; border-color: #c3e6cb; }
+        .message.error { background-color: #f8d7da; color: #721c24; border-color: #f5c6cb; }
+        .message.info { background-color: #d1ecf1; color: #0c5460; border-color: #bee5eb; }
+        .back-link { display: block; text-align: center; margin-top: 20px; color: #007bff; text-decoration: none; }
+        .back-link:hover { text-decoration: underline; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h2>아이디 찾기</h2>
+
+        <% if (message) { %>
+            <div class="message <%= messageType %>">
+                <%= message %>
+            </div>
+        <% } %>
+
+        <form name="findIdForm" action="/bbs/find_id" method="post">
+            <table>
+                <tbody>
+                    <tr>
+                        <td>이름</td>
+                        <td><input type="text" name="name" placeholder="이름을 입력하세요" required></td>
+                    </tr>
+                </tbody>
+            </table>
+            <div class="button-group">
+                <button type="submit">아이디 찾기</button>
+            </div>
+        </form>
+        <a href="/bbs/login" class="back-link">로그인 페이지로 돌아가기</a>
+    </div>
+</body>
+</html>
