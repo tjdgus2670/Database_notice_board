@@ -4,10 +4,20 @@
     <meta http-equiv="Content-Type" content="text/html"; charset="utf-8"/>
     <title>글읽기</title>
     <style>
+        /* 기본 스타일 */
+        body { font-family: sans-serif; margin: 20px; }
+        table { border-collapse: collapse; margin-bottom: 20px; }
+        td, th { border: 1px solid #ccc; padding: 8px; }
+        a { text-decoration: none; color: #007bff; }
+        a:hover { text-decoration: underline; }
+        button { padding: 5px 10px; cursor: pointer; border: 1px solid #ccc; background-color: #f0f0f0; }
+        button:hover { background-color: #e0e0e0; }
+
         /* 댓글 들여쓰기 스타일 */
         .comment-item {
             border-bottom: 1px dashed #eee;
             padding: 10px 0;
+            margin-bottom: 5px; /* 각 댓글 항목 간 간격 */
         }
         .comment-content {
             margin-bottom: 5px;
@@ -17,23 +27,32 @@
         .depth-1 { padding-left: 30px; background-color: #f9f9f9; }
         .depth-2 { padding-left: 60px; background-color: #f0f0f0; }
         .depth-3 { padding-left: 90px; background-color: #e6e6e6; }
-        /* 필요에 따라 depth 추가 및 스타일 조정 */
+        .depth-4 { padding-left: 120px; background-color: #dcdcdc; }
+        /* 필요에 따라 더 깊은 depth 추가 및 스타일 조정 */
 
         /* 답글 입력 폼 숨김 처리 */
         .reply-form {
-            display: none;
+            display: none; /* 기본적으로 숨김 */
             margin-top: 10px;
             border: 1px solid #ddd;
             padding: 10px;
             background-color: #fafafa;
         }
+        .deleted-comment {
+            color: #999;
+            font-style: italic;
+            background-color: #f2f2f2;
+            padding: 5px;
+            border-radius: 3px;
+        }
     </style>
 </head>
 <body>
     <%
-        console.log("bbs.rows : " + JSON.stringify(bbs.rows));
-        var column = bbs.rows[0]; // 게시글 정보
+        console.log("bbs.rows : " + JSON.stringify(bbs.rows)); // 백엔드에서 받은 게시글 데이터
+        var column = bbs.rows[0]; // 게시글 정보 배열
     %>
+    <h2>게시글 보기</h2>
     <table border="1" style="width:1024px">
         <tbody>
             <tr><td>글번호</td><td><%=column[0]%></td></tr>
@@ -41,62 +60,69 @@
             <tr><td>제목</td><td><%=column[1]%></td></tr>
             <tr><td>내용</td><td><%=column[2]%></td></tr>
             <tr><td>작성 날짜</td><td><%=column[4]%></td></tr>
-            <tr><td>조회수</td><td><%=column[5]%></td></tr>
-        </tbody>
+            <tr><td>조회수</td><td><%=column[6]%></td></tr> </tbody>
     </table>
     <p>
         <a href="/bbs/list">게시판 홈으로 돌아가기</a> /
-        <a href="/bbs/delete?brdno=<%=column[0]%>">삭제</a> /
-        <a href="/bbs/update?brdno=<%=column[0]%>">수정</a>
+        <a href="/bbs/delete?brdno=<%=column[0]%>">게시글 삭제</a> /
+        <a href="/bbs/update?brdno=<%=column[0]%>">게시글 수정</a>
     </p>
 
-    <p>
-        <h3>새 댓글 작성</h3>
-        <form name="commentForm" action="/bbs/wsave" method="post">
-            <table border="1" style="width:1024px">
-                <tbody>
-                    <tr>
-                        <td>댓글 내용</td>
-                        <td><textarea name="wbrdmemo" rows="3" cols="70"></textarea></td>
-                    </tr>          
-                </tbody>
-            </table>
-            <button type="submit">댓글 저장</button>
-            <input type="hidden" name="bbsno" value="<%=column[0]%>">
-            <input type="hidden" name="parent_no" value=""> </form>
-    </p>
     <hr/>
 
-    <h3>댓글 목록</h3>
+    <h3>새 댓글 작성</h3>
+    <form name="commentForm" action="/bbs/wsave" method="post">
+        <table border="1" style="width:1024px">
+            <tbody>
+                <tr>
+                    <td>댓글 내용</td>
+                    <td><textarea name="wbrdmemo" rows="3" cols="70" placeholder="댓글을 입력하세요."></textarea></td>
+                </tr>          
+            </tbody>
+        </table>
+        <button type="submit">댓글 저장</button>
+        <input type="hidden" name="bbsno" value="<%=column[0]%>">
+        <input type="hidden" name="parent_no" value=""> </form>
+
+    <hr/>
+
+    <h3>댓글 목록 (<%= wbbs.length %>개)</h3>
     <div id="comments-container">
         <%
-            console.log("wlist start ============");
-            console.log("wbbs.rows : " + wbbs.length); // 배열의 길이로 접근
-            for(var i=0; i<wbbs.length; i++) { 
+            console.log("wbbs.length : " + wbbs.length); // 백엔드에서 받은 댓글 데이터 배열의 길이
+            for(var i = 0; i < wbbs.length; i++) { 
                 var wcolumn = wbbs[i]; // 배열의 요소 직접 접근
-                // wcolumn[0]: NO, wcolumn[1]: BBS_NO, wcolumn[2]: WRITER, wcolumn[3]: CONTENT
-                // wcolumn[4]: REGDATE_FORMATTED, wcolumn[5]: WCOUNT, wcolumn[6]: OK
-                // wcolumn[7]: PARENT_NO, wcolumn[8]: DEPTH, wcolumn[9]: GROUP_ID, wcolumn[10]: ORDER_IN_GROUP
-                // wcolumn[11]: GOOD, wcolumn[12]: BAD
+                // 백엔드 read 라우터에서 조회하는 컬럼 순서에 따라 인덱스 조정
+                // [0]: NO, [1]: BBS_NO, [2]: WRITER, [3]: CONTENT
+                // [4]: REGDATE_FORMATTED, [5]: WCOUNT, [6]: OK
+                // [7]: PARENT_NO, [8]: DEPTH, [9]: GROUP_ID, [10]: ORDER_IN_GROUP
+                // [11]: GOOD, [12]: BAD
 
                 var commentNo = wcolumn[0];
                 var writer = wcolumn[2];
                 var content = wcolumn[3];
                 var regDate = wcolumn[4];
                 var depth = wcolumn[8]; // DEPTH 값 사용
+                var okStatus = wcolumn[6]; // OK 값 (0 또는 1)
         %>
-            <div class="comment-item depth-<%= depth %>"> <div class="comment-header">
-                    <strong><%= writer %></strong> <span style="font-size: 0.8em; color: #888;">(<%= regDate %>)</span>
-                </div>
-                <div class="comment-content">
-                    <%= content %>
-                </div>
-                <div class="comment-actions">
-                    <a href='/bbs/wgood?brdno=<%=commentNo%>'>좋아요</a> /
-                    <a href='/bbs/wbad?brdno=<%=commentNo%>'>나빠요</a> /
-                    <button type="button" onclick="toggleReplyForm('<%= commentNo %>')">답글 달기</button> /
-                    <a href='/bbs/w_delete?brdno=<%=commentNo%>'>댓글지우기</a>
-                </div>
+            <div class="comment-item depth-<%= depth %>"> <% if (okStatus === 0) { %>
+                    <div class="deleted-comment">
+                        삭제된 댓글입니다.
+                        <button type="button" onclick="toggleReplyForm('<%= commentNo %>')">답글 달기</button>
+                    </div>
+                <% } else { %>
+                    <div class="comment-header">
+                        <strong><%= writer %></strong> <span style="font-size: 0.8em; color: #888;">(<%= regDate %>)</span>
+                    </div>
+                    <div class="comment-content">
+                        <%= content %>
+                    </div>
+                    <div class="comment-actions">
+                        <a href='/bbs/wgood?commentNo=<%=commentNo%>'>좋아요</a> / <a href='/bbs/wbad?commentNo=<%=commentNo%>'>나빠요</a> / <button type="button" onclick="toggleReplyForm('<%= commentNo %>')">답글 달기</button> /
+                        <a href='/bbs/w_delete?commentNo=<%=commentNo%>&bbsno=<%=column[0]%>'>댓글 삭제</a>
+                    </div>
+                <% } %>
+                
                 <div id="replyForm_<%= commentNo %>" class="reply-form">
                     <form name="replyForm_<%= commentNo %>" action="/bbs/wsave" method="post">
                         <textarea name="wbrdmemo" rows="2" cols="60" placeholder="<%= writer %>님에게 답글..."></textarea>
@@ -115,14 +141,17 @@
         // 답글 폼을 토글하는 함수
         function toggleReplyForm(commentNo) {
             var replyForm = document.getElementById('replyForm_' + commentNo);
+            
+            // 모든 답글 폼을 먼저 닫습니다.
+            var openForms = document.querySelectorAll('.reply-form');
+            openForms.forEach(form => {
+                if (form.id !== 'replyForm_' + commentNo) { // 현재 열려는 폼이 아닌 다른 폼들만
+                    form.style.display = 'none';
+                }
+            });
+
+            // 클릭한 답글 폼을 토글합니다.
             if (replyForm.style.display === 'none' || replyForm.style.display === '') {
-                // 다른 열려있는 답글 폼 닫기 (선택 사항)
-                var openForms = document.querySelectorAll('.reply-form');
-                openForms.forEach(form => {
-                    if (form.id !== 'replyForm_' + commentNo) {
-                        form.style.display = 'none';
-                    }
-                });
                 replyForm.style.display = 'block';
             } else {
                 replyForm.style.display = 'none';

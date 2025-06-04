@@ -306,15 +306,22 @@ async function read_bbs(brdno){
   });
 }
 
-router.get('/read',async function(req,res,next){ // async 추가
-  console.log("req.query.brdno :"+req.query.brdno);
+router.get('/read', async function(req,res,next){ // async 추가
+  console.log(`[Info] /read: 게시글 조회 요청 (NO: ${req.query.brdno})`);
 
+  let connection;
   try {
+      // 게시글 정보 조회 (기존 read_bbs 함수 사용)
       const retBBS = await read_bbs(req.query.brdno); // await 사용
-      let connection = await oracledb.getConnection(dbconfig);
+      if (!retBBS || retBBS.rows.length === 0) {
+          console.warn(`[Warning] /read: 게시글 (NO: ${req.query.brdno})을 찾을 수 없음.`);
+          return res.render('bbs/error', { errcode: 404 }); // 게시글 없음
+      }
+
+      connection = await oracledb.getConnection(dbconfig);
       
       // 댓글 조회 쿼리 수정: GROUP_ID와 ORDER_IN_GROUP으로 정렬
-      // PARENT_NO, DEPTH, GROUP_ID, ORDER_IN_GROUP 컬럼도 조회에 포함
+      // PARENT_NO, DEPTH, GROUP_ID, ORDER_IN_GROUP, OK 컬럼도 조회에 포함
       var sql = `
           SELECT 
               NO, BBS_NO, WRITER, CONTENT, to_char(REGDATE,'yyyy-mm-dd hh24:mi:ss') AS REGDATE_FORMATTED, 
@@ -324,33 +331,34 @@ router.get('/read',async function(req,res,next){ // async 추가
           ORDER BY GROUP_ID ASC, ORDER_IN_GROUP ASC
       `; 
       
-      console.log("sql :"+sql);
+      console.log(`[Info] /read: 댓글 조회 SQL: ${sql}`);
       const wbbsRows = await connection.execute(sql, { bbs_no: req.query.brdno }); 
+      console.log(`[Info] /read: 댓글 ${wbbsRows.rows.length}개 조회됨.`);
       
       res.render('bbs/read', {bbs: retBBS, wbbs: wbbsRows.rows}); // .rows로 데이터 전달
-      connection.release(); // finally 블록으로 이동 가능
       
   } catch (err) {
-      console.error("err : "+err);
+      console.error(`[Error] /read: 게시글/댓글 조회 중 오류 발생: ${err.message}`, err.stack);
       res.render('bbs/error', {errcode: 500}); // 에러 페이지 렌더링
   } finally {
-      // connection.release()는 finally 블록에서 하는 것이 좋습니다.
-      // if (connection) {
-      //     try { await connection.close(); }
-      //     catch (e) { console.error(e); }
-      // }
+      if (connection) {
+          try { await connection.close(); }
+          catch (e) { console.error(`[Error] /read: DB 연결 해제 중 오류: ${e.message}`, e.stack); }
+      }
   }
 });
 
 router.post('/wsave', async function(req, res, next){
-  var bbsno = req.body.bbsno; // 게시글 NO (hidden input으로 받음)
-  var parent_no = req.body.parent_no || null; // 대댓글이면 부모 댓글 NO, 아니면 null (hidden input으로 받음)
-  var wbrdmemo = req.body.wbrdmemo; // 댓글 내용
-  var writer = req.session.user ? req.session.user.id : null; // 작성자 ID (세션에서)
-  var code = 0;
+  const bbsno = req.body.bbsno; // 게시글 NO
+  const parent_no = req.body.parent_no || null; // 대댓글이면 부모 댓글 NO, 아니면 null
+  const wbrdmemo = req.body.wbrdmemo; // 댓글 내용
+  const writer = req.session.user ? req.session.user.id : null; // 작성자 ID (세션에서)
+  let code = 0;
 
+  // 로그인 확인
   if (!writer) {
-      code = 5; // 로그인 안 됨
+      code = 5; // errcode 5: 로그인 필요
+      console.log(`[Error] /wsave: 로그인되지 않은 사용자 접근 시도. IP: ${req.ip}`);
       return res.render('bbs/error', {errcode : code});
   }
 
@@ -362,12 +370,14 @@ router.post('/wsave', async function(req, res, next){
       let group_id;
       let order_in_group;
 
-      // 1. 새로운 댓글의 NO를 시퀀스로 미리 얻기
-      //    ORACLE의 SEQUENCE는 INSERT 전에 NEXTVAL을 가져올 수 있습니다.
+      // 1. 새로운 댓글의 NO를 Oracle 시퀀스에서 미리 얻기
+      // 이는 GROUP_ID를 자신으로 설정해야 하는 최상위 댓글의 경우에 필요합니다.
       const noResult = await connection.execute("SELECT bbsw_seq.nextval FROM DUAL");
       const newCommentNo = noResult.rows[0][0];
+      console.log(`[Info] /wsave: 새로운 댓글 NO 할당: ${newCommentNo}`);
 
       if (parent_no) { // **대댓글인 경우**
+          console.log(`[Info] /wsave: 대댓글 작성 시도 (부모 NO: ${parent_no})`);
           // 부모 댓글의 DEPTH와 GROUP_ID를 조회
           const parentResult = await connection.execute(
               "SELECT DEPTH, GROUP_ID FROM BBSW WHERE NO = :parent_no",
@@ -379,44 +389,53 @@ router.post('/wsave', async function(req, res, next){
               const parentGroupId = parentResult.rows[0][1];
 
               depth = parentDepth + 1;
-              group_id = parentGroupId; // 부모의 group_id를 상속
+              group_id = parentGroupId; // 부모의 group_id 상속
 
-              // 2. ORDER_IN_GROUP 계산: 해당 그룹 내에서 가장 마지막에 추가
-              //    동일한 group_id를 가지면서 parent_no가 이 댓글의 parent_no인 댓글들 중 가장 큰 order_in_group을 찾습니다.
-              //    이 로직은 '대댓글은 항상 부모 댓글 바로 아래에 붙는다'는 시나리오를 가정합니다.
-              //    (만약 깊이별로 순서를 정확히 제어하려면 더 복잡한 로직이 필요합니다.)
+              // ORDER_IN_GROUP 계산: 해당 그룹 내에서 가장 마지막에 추가
+              // 동일한 group_id를 가지면서 parent_no가 이 댓글의 parent_no인 댓글들 중
+              // 가장 큰 order_in_group을 찾아 +1 합니다.
+              // 이 방식은 '대댓글은 항상 부모 댓글의 마지막 답글로 붙는다'는 시나리오에 적합합니다.
               const maxOrderInGroupResult = await connection.execute(
-                  `SELECT NVL(MAX(ORDER_IN_GROUP), 0) + 1 FROM BBSW WHERE GROUP_ID = :group_id AND PARENT_NO = :parent_no`,
+                  `SELECT NVL(MAX(ORDER_IN_GROUP), 0) FROM BBSW WHERE GROUP_ID = :group_id AND PARENT_NO = :parent_no`,
                   { group_id: group_id, parent_no: parent_no }
               );
-              order_in_group = maxOrderInGroupResult.rows[0][0];
+              order_in_group = maxOrderInGroupResult.rows[0][0] + 1;
+              console.log(`[Info] /wsave: 대댓글 (NO:${newCommentNo}) - DEPTH: ${depth}, GROUP_ID: ${group_id}, ORDER_IN_GROUP: ${order_in_group}`);
+
           } else {
-              // 부모 댓글을 찾을 수 없는 경우 (예외 상황), 최상위 댓글로 처리
-              console.warn("Parent comment not found, treating as top-level comment.");
-              parent_no = null;
+              // 부모 댓글을 찾을 수 없는 경우 (예외 상황), 최상위 댓글로 간주하고 경고
+              console.warn(`[Warning] /wsave: 부모 댓글 (NO: ${parent_no})를 찾을 수 없음. 최상위 댓글로 처리.`);
+              parent_no = null; // 최상위 댓글로 간주
               depth = 0;
               group_id = newCommentNo; // 자신의 NO를 group_id로
-              order_in_group = 1;
+              
+              // 최상위 댓글의 order_in_group은 해당 게시글 내 최상위 댓글 중 가장 마지막에 위치
+              const maxTopOrderResult = await connection.execute(
+                  `SELECT NVL(MAX(ORDER_IN_GROUP), 0) FROM BBSW WHERE BBS_NO = :bbs_no AND PARENT_NO IS NULL`,
+                  { bbs_no: bbsno }
+              );
+              order_in_group = maxTopOrderResult.rows[0][0] + 1;
+              console.log(`[Info] /wsave: 최상위 댓글 (NO:${newCommentNo}) - DEPTH: ${depth}, GROUP_ID: ${group_id}, ORDER_IN_GROUP: ${order_in_group}`);
           }
       } else { // **최상위 댓글인 경우**
+          console.log(`[Info] /wsave: 최상위 댓글 작성 시도 (게시글 NO: ${bbsno})`);
           depth = 0;
           group_id = newCommentNo; // 자신의 NO를 group_id로
           
-          // 최상위 댓글의 ORDER_IN_GROUP은 해당 게시글 내 최상위 댓글 중 가장 마지막에 위치
-          // 여기서는 간단하게 MAX(ORDER_IN_GROUP) + 1을 사용합니다.
-          // (실제로는 BBS_NO별로 최상위 댓글의 MAX(ORDER_IN_GROUP)을 찾아야 더 정확합니다.)
+          // 최상위 댓글의 ORDER_IN_GROUP은 해당 게시글 내 최상위 댓글 중 가장 마지막에 추가
           const maxTopOrderResult = await connection.execute(
-              `SELECT NVL(MAX(ORDER_IN_GROUP), 0) + 1 FROM BBSW WHERE BBS_NO = :bbs_no AND PARENT_NO IS NULL`,
+              `SELECT NVL(MAX(ORDER_IN_GROUP), 0) FROM BBSW WHERE BBS_NO = :bbs_no AND PARENT_NO IS NULL`,
               { bbs_no: bbsno }
           );
-          order_in_group = maxTopOrderResult.rows[0][0];
+          order_in_group = maxTopOrderResult.rows[0][0] + 1;
+          console.log(`[Info] /wsave: 최상위 댓글 (NO:${newCommentNo}) - DEPTH: ${depth}, GROUP_ID: ${group_id}, ORDER_IN_GROUP: ${order_in_group}`);
       }
 
-      // 3. BBSW 테이블에 댓글 삽입 (GROUP_ID, ORDER_IN_GROUP, DEPTH 포함)
+      // 2. BBSW 테이블에 댓글 삽입
       const insertSql = `
-          INSERT INTO BBSW (NO, BBS_NO, WRITER, CONTENT, REGDATE, PARENT_NO, DEPTH, GROUP_ID, ORDER_IN_GROUP)
-          VALUES (:no, :bbs_no, :writer, :content, SYSDATE, :parent_no, :depth, :group_id, :order_in_group)
-      `;
+          INSERT INTO BBSW (NO, BBS_NO, WRITER, CONTENT, REGDATE, PARENT_NO, DEPTH, GROUP_ID, ORDER_IN_GROUP, OK, WCOUNT, GOOD, BAD)
+          VALUES (:no, :bbs_no, :writer, :content, SYSDATE, :parent_no, :depth, :group_id, :order_in_group, 1, 0, 0, 0)
+      `; // OK, WCOUNT, GOOD, BAD 초기값 설정
       const binds = {
           no: newCommentNo,
           bbs_no: bbsno,
@@ -428,18 +447,74 @@ router.post('/wsave', async function(req, res, next){
           order_in_group: order_in_group
       };
 
-      await connection.execute(insertSql, binds);
+      const result = await connection.execute(insertSql, binds);
+      console.log(`[Success] /wsave: 댓글 삽입 성공. Rows affected: ${result.rowsAffected}`);
 
       res.redirect("/bbs/read?brdno=" + bbsno);
 
   } catch (err) {
-      console.error("Error saving comment:", err);
-      code = 500; // 서버 오류
-      res.render('bbs/error', {errcode : code});
+      console.error(`[Error] /wsave: 댓글 저장 중 오류 발생: ${err.message}`, err.stack);
+      res.render('bbs/error', {errcode : 500}); // 서버 오류
   } finally {
       if (connection) {
           try { await connection.close(); }
-          catch (e) { console.error(e); }
+          catch (e) { console.error(`[Error] /wsave: DB 연결 해제 중 오류: ${e.message}`, e.stack); }
+      }
+  }
+});
+
+
+router.get('/w_delete', async function(req, res, next){
+  const commentNo = req.query.commentNo; // 삭제할 댓글의 NO (read.ejs에서 넘어옴)
+  const bbsno = req.query.bbsno;       // 삭제 후 돌아갈 게시글의 NO (read.ejs에서 넘어옴)
+
+  console.log(`[Info] /w_delete: 댓글 삭제 요청 (댓글 NO: ${commentNo}, 게시글 NO: ${bbsno})`);
+
+  // 로그인 여부 확인
+  if (!req.session.user) {
+      console.warn(`[Warning] /w_delete: 로그인되지 않은 사용자 댓글 삭제 시도. IP: ${req.ip}`);
+      return res.render('bbs/error', { errcode: 5 }); // errcode 5: 로그인 필요
+  }
+
+  let connection;
+  try {
+      connection = await oracledb.getConnection(dbconfig);
+
+      // 1. 댓글 작성자 확인 (권한 확인)
+      const checkWriterSql = `SELECT WRITER FROM BBSW WHERE NO = :commentNo`;
+      const checkResult = await connection.execute(checkWriterSql, { commentNo: commentNo });
+
+      if (checkResult.rows.length === 0) {
+          console.warn(`[Warning] /w_delete: 댓글 (NO: ${commentNo})을 찾을 수 없음.`);
+          return res.render('bbs/error', { errcode: 404 }); // errcode 404: 댓글 없음
+      }
+
+      const commentWriter = checkResult.rows[0][0];
+      if (commentWriter !== req.session.user.id) {
+          console.warn(`[Warning] /w_delete: 권한 없는 사용자 댓글 삭제 시도. 사용자: ${req.session.user.id}, 댓글 작성자: ${commentWriter}`);
+          return res.render('bbs/error', { errcode: 403 }); // errcode 403: 권한 없음
+      }
+
+      // 2. 논리적 삭제: OK 값을 0으로 업데이트
+      const updateSql = `UPDATE BBSW SET OK = 0 WHERE NO = :commentNo`;
+      const result = await connection.execute(updateSql, { commentNo: commentNo });
+
+      if (result.rowsAffected > 0) {
+          console.log(`[Success] /w_delete: 댓글 (NO: ${commentNo}) 논리적으로 삭제됨. (OK=0)`);
+      } else {
+          console.warn(`[Warning] /w_delete: 댓글 (NO: ${commentNo}) 논리적 삭제 실패. 영향을 받은 행 없음.`);
+      }
+      
+      // 댓글 삭제 후 게시글 페이지로 리디렉션
+      res.redirect(`/bbs/read?brdno=${bbsno}`);
+
+  } catch (err) {
+      console.error(`[Error] /w_delete: 댓글 삭제 중 오류 발생: ${err.message}`, err.stack);
+      res.render('bbs/error', { errcode: 500 }); // errcode 500: 서버 오류
+  } finally {
+      if (connection) {
+          try { await connection.close(); }
+          catch (e) { console.error(`[Error] /w_delete: DB 연결 해제 중 오류: ${e.message}`, e.stack); }
       }
   }
 });
