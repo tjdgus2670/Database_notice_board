@@ -296,6 +296,21 @@ router.get('/form',function(req,res,next){
 
 // 파일 업로드 처리를 위해 upload.single('userfile') 미들웨어 추가
 router.post('/save', upload.single('userfile'), function(req,res,next){
+    const { brdtitle, brdmemo, brdwriter } = req.body; // 구조 분해 할당으로 가독성 높임
+    let code = 0;
+
+    // 서버 측 유효성 검사 추가
+    if (!brdtitle || brdtitle.trim() === '') {
+        console.warn(`[Warning] /save: 제목이 비어있어 게시글 작성을 거부합니다.`);
+        code = 7; // 에러 코드 7: 제목 필수
+        return res.render('bbs/error', { errcode: code, message: "제목은 필수 입력 사항입니다." });
+    }
+    if (!brdmemo || brdmemo.trim() === '') {
+        console.warn(`[Warning] /save: 내용이 비어있어 게시글 작성을 거부합니다.`);
+        code = 8; // 에러 코드 8: 내용 필수
+        return res.render('bbs/error', { errcode: code, message: "내용은 필수 입력 사항입니다." });
+    }
+    
     oracledb.getConnection(dbconfig,function(err,connection){
         if (err) {
             console.error("DB connection error:", err);
@@ -305,14 +320,14 @@ router.post('/save', upload.single('userfile'), function(req,res,next){
         let filePath = null;
         let originalFileName = null;
         
-        // Multer에서 에러가 발생했는지 확인
         if (req.fileValidationError) {
             console.error("File upload validation error:", req.fileValidationError);
+            connection.release(); // 에러 발생 시 연결 해제
             return res.render('bbs/error', { errcode: 400, message: req.fileValidationError.message });
         }
 
         if (req.file) {
-            filePath = '/uploads/' + req.file.filename; // 웹에서 접근 가능한 경로
+            filePath = '/uploads/' + req.file.filename; 
             originalFileName = req.file.originalname;
             console.log("Uploaded file:", req.file);
             console.log("File path for DB:", filePath);
@@ -322,29 +337,28 @@ router.post('/save', upload.single('userfile'), function(req,res,next){
                     "VALUES(bbs_seq.nextval, :title, :content, :writer, SYSDATE, :filePath, :originalFileName)";
         
         const binds = {
-            title: req.body.brdtitle,
-            content: req.body.brdmemo,
-            writer: req.body.brdwriter,
+            title: brdtitle,    // 수정된 변수 사용
+            content: brdmemo,   // 수정된 변수 사용
+            writer: brdwriter,  // 수정된 변수 사용
             filePath: filePath,
             originalFileName: originalFileName
         };
 
-        connection.execute(sql, binds, { autoCommit: true }, function(err, result){ // autoCommit 옵션 명시
+        connection.execute(sql, binds, { autoCommit: true }, function(err, result){ 
             if(err) {
                 console.error("DB execute error:", err);
-                // DB 저장 실패 시 업로드된 파일 삭제 (선택 사항)
                 if (req.file) {
                     fs.unlink(req.file.path, (unlinkErr) => {
                         if (unlinkErr) console.error("Error deleting uploaded file:", unlinkErr);
                     });
                 }
-                connection.release(); // 에러 발생 시에도 연결 해제
+                connection.release(); 
                 return res.render('bbs/error', { errcode: 500 });
             } 
             
             console.log("Rows affected:", result.rowsAffected);
             res.redirect('/bbs/list');
-            connection.release(); // 정상 처리 후 연결 해제
+            connection.release(); 
         });
     });
 });

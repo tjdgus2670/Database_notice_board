@@ -11,5 +11,7 @@
     <% if(errcode == 4) { %> <script> alert('로그인 되어 있지 않습니다. 로그인 부터 하세요'); window.setTimeout(location.href='http://localhost:3000/bbs/list', 1000 );</script> <% } %>
     <% if(errcode == 5) { %> <script> alert('댓글은 로그인 상태에서 입력 가능합니다. 로그인 부터 하세요'); window.setTimeout(location.href='http://localhost:3000/bbs/login', 1000 );</script> <% } %>
     <% if(errcode == 6) { %> <script> alert('비활성화된 계정입니다. 다른 계정으로 로그인하십시오'); window.setTimeout(location.href='http://localhost:3000/bbs/login', 1000 );</script> <% } %>
+    <% if(errcode == 7) { %> <script> alert('게시글 **제목**은 필수 입력 사항입니다.'); window.setTimeout(location.href='http://localhost:3000/bbs/login', 1000 );</script> <% } %>
+    <% if(errcode == 8) { %> <script> alert('게시글 **내용**은 필수 입력 사항입니다.'); window.setTimeout(location.href='http://localhost:3000/bbs/login', 1000 );</script> <% } %>
 </body>
 </html>

@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html>
 <head>
-    <meta http-equiv="Content-Type" content="text/html; charset=utf-8"/>
+    <meta http-equiv="Content-Type" content="text/html"; charset="utf-8"/>
     <title>글작성</title>
 
 </head>
@@ -21,19 +21,19 @@
                 <tr>
                     <td>작성자</td>
                     <td><input type="text" name="brdwriter" size="20" maxlength="20" value="<%=id%>" readonly></td>
-                    </tr>
+                </tr>
                 <tr>
                     <td>제목</td>
                     <td><input type="text" name="brdtitle" size="70" maxlength="250" value="" required></td>
                     </tr>
                 <tr>
                     <td>내용</td>
-                    <td><textarea name="brdmemo" rows="5" cols="60"></textarea></td>
-                </tr> 
+                    <td><textarea name="brdmemo" rows="5" cols="60" required></textarea></td>
+                    </tr> 
                 <tr>
                     <td> 파일 업로드</td>
                     <td> <input type="file" name="userfile"> </td>
-                    </tr>
+                </tr>
                 <tr>
                     <td colspan="2">
                         <button type="submit">저장</button>
