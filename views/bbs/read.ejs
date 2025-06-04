@@ -12,6 +12,23 @@
         a:hover { text-decoration: underline; }
         button { padding: 5px 10px; cursor: pointer; border: 1px solid #ccc; background-color: #f0f0f0; }
         button:hover { background-color: #e0e0e0; }
+        .like-button, .dislike-button {
+            padding: 5px 10px;
+            cursor: pointer;
+            border: 1px solid #ccc;
+            background-color: #f0f0f0;
+            margin-right: 5px;
+        }
+        .like-button.active {
+            background-color: #28a745; /* 좋아요 선택 시 초록색 */
+            color: white;
+            border-color: #28a745;
+        }
+        .dislike-button.active {
+            background-color: #dc3545; /* 싫어요 선택 시 빨간색 */
+            color: white;
+            border-color: #dc3545;
+        }
 
         /* 댓글 들여쓰기 스타일 */
         .comment-item {
@@ -97,6 +114,7 @@
                 // [4]: REGDATE_FORMATTED, [5]: WCOUNT, [6]: OK
                 // [7]: PARENT_NO, [8]: DEPTH, [9]: GROUP_ID, [10]: ORDER_IN_GROUP
                 // [11]: GOOD, [12]: BAD
+                // [13]: MY_VOTE_TYPE (추가됨)
 
                 var commentNo = wcolumn[0];
                 var writer = wcolumn[2];
@@ -104,11 +122,15 @@
                 var regDate = wcolumn[4];
                 var depth = wcolumn[8]; // DEPTH 값 사용
                 var okStatus = wcolumn[6]; // OK 값 (0 또는 1)
+                var goodCount = wcolumn[11]; // GOOD (좋아요 수)
+                var badCount = wcolumn[12];  // BAD (싫어요 수)
+                var myVoteType = wcolumn[13]; // MY_VOTE_TYPE (로그인한 사용자의 투표 여부)
         %>
-            <div class="comment-item depth-<%= depth %>"> <% if (okStatus === 0) { %>
+            <div class="comment-item depth-<%= depth %>">
+                <% if (okStatus === 0) { %>
                     <div class="deleted-comment">
                         삭제된 댓글입니다.
-                        <button type="button" onclick="toggleReplyForm('<%= commentNo %>')">답글 달기</button>
+                        <% // 삭제된 댓글에는 답글 달기 버튼을 표시하지 않습니다. %>
                     </div>
                 <% } else { %>
                     <div class="comment-header">
@@ -118,8 +140,17 @@
                         <%= content %>
                     </div>
                     <div class="comment-actions">
-                        <a href='/bbs/wgood?commentNo=<%=commentNo%>'>좋아요</a> / <a href='/bbs/wbad?commentNo=<%=commentNo%>'>나빠요</a> / <button type="button" onclick="toggleReplyForm('<%= commentNo %>')">답글 달기</button> /
-                        <a href='/bbs/w_delete?commentNo=<%=commentNo%>&bbsno=<%=column[0]%>'>댓글 삭제</a>
+                        <% if (loggedInUser) { // 로그인한 사용자에게만 좋아요/싫어요 버튼 표시 %>
+                            <button type="button" class="like-button <%= myVoteType === 1 ? 'active' : '' %>" onclick="window.location.href='/bbs/w_vote?commentNo=<%=commentNo%>&voteType=1&bbsno=<%=column[0]%>'">좋아요 (<%= goodCount %>)</button>
+                            <button type="button" class="dislike-button <%= myVoteType === 0 ? 'active' : '' %>" onclick="window.location.href='/bbs/w_vote?commentNo=<%=commentNo%>&voteType=0&bbsno=<%=column[0]%>'">싫어요 (<%= badCount %>)</button>
+                        <% } else { %>
+                            <span>좋아요 (<%= goodCount %>)</span>
+                            <span>싫어요 (<%= badCount %>)</span>
+                        <% } %>
+                        <button type="button" onclick="toggleReplyForm('<%= commentNo %>')">답글 달기</button>
+                        <% if (loggedInUser && loggedInUser === writer) { // 댓글 작성자에게만 댓글 삭제 버튼 표시 %>
+                            / <a href='/bbs/w_delete?commentNo=<%=commentNo%>&bbsno=<%=column[0]%>'>댓글 삭제</a>
+                        <% } %>
                     </div>
                 <% } %>
                 

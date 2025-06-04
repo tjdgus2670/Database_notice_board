@@ -307,45 +307,48 @@ async function read_bbs(brdno){
 }
 
 router.get('/read', async function(req,res,next){ // async 추가
-  console.log(`[Info] /read: 게시글 조회 요청 (NO: ${req.query.brdno})`);
+    console.log(`[Info] /read: 게시글 조회 요청 (NO: ${req.query.brdno})`);
 
-  let connection;
-  try {
-      // 게시글 정보 조회 (기존 read_bbs 함수 사용)
-      const retBBS = await read_bbs(req.query.brdno); // await 사용
-      if (!retBBS || retBBS.rows.length === 0) {
-          console.warn(`[Warning] /read: 게시글 (NO: ${req.query.brdno})을 찾을 수 없음.`);
-          return res.render('bbs/error', { errcode: 404 }); // 게시글 없음
-      }
+    let connection;
+    try {
+        // 게시글 정보 조회 (기존 read_bbs 함수 사용)
+        const retBBS = await read_bbs(req.query.brdno); // await 사용
+        if (!retBBS || retBBS.rows.length === 0) {
+            console.warn(`[Warning] /read: 게시글 (NO: ${req.query.brdno})을 찾을 수 없음.`);
+            return res.render('bbs/error', { errcode: 404 }); // 게시글 없음
+        }
 
-      connection = await oracledb.getConnection(dbconfig);
-      
-      // 댓글 조회 쿼리 수정: GROUP_ID와 ORDER_IN_GROUP으로 정렬
-      // PARENT_NO, DEPTH, GROUP_ID, ORDER_IN_GROUP, OK 컬럼도 조회에 포함
-      var sql = `
-          SELECT 
-              NO, BBS_NO, WRITER, CONTENT, to_char(REGDATE,'yyyy-mm-dd hh24:mi:ss') AS REGDATE_FORMATTED, 
-              WCOUNT, OK, PARENT_NO, DEPTH, GROUP_ID, ORDER_IN_GROUP, GOOD, BAD
-          FROM BBSW
-          WHERE BBS_NO = :bbs_no
-          ORDER BY GROUP_ID ASC, ORDER_IN_GROUP ASC
-      `; 
-      
-      console.log(`[Info] /read: 댓글 조회 SQL: ${sql}`);
-      const wbbsRows = await connection.execute(sql, { bbs_no: req.query.brdno }); 
-      console.log(`[Info] /read: 댓글 ${wbbsRows.rows.length}개 조회됨.`);
-      
-      res.render('bbs/read', {bbs: retBBS, wbbs: wbbsRows.rows}); // .rows로 데이터 전달
-      
-  } catch (err) {
-      console.error(`[Error] /read: 게시글/댓글 조회 중 오류 발생: ${err.message}`, err.stack);
-      res.render('bbs/error', {errcode: 500}); // 에러 페이지 렌더링
-  } finally {
-      if (connection) {
-          try { await connection.close(); }
-          catch (e) { console.error(`[Error] /read: DB 연결 해제 중 오류: ${e.message}`, e.stack); }
-      }
-  }
+        connection = await oracledb.getConnection(dbconfig);
+        
+        // 댓글 조회 쿼리 수정: GROUP_ID와 ORDER_IN_GROUP으로 정렬
+        // PARENT_NO, DEPTH, GROUP_ID, ORDER_IN_GROUP, OK, GOOD, BAD 컬럼도 조회에 포함
+        // 로그인한 사용자가 해당 댓글에 투표했는지 여부 (MY_VOTE_TYPE)도 함께 조회
+        const userId = req.session.user ? req.session.user.id : null; // 로그인한 사용자 ID
+        var sql = `
+            SELECT 
+                BBSW.NO, BBSW.BBS_NO, BBSW.WRITER, BBSW.CONTENT, to_char(BBSW.REGDATE,'yyyy-mm-dd hh24:mi:ss') AS REGDATE_FORMATTED, 
+                BBSW.WCOUNT, BBSW.OK, BBSW.PARENT_NO, BBSW.DEPTH, BBSW.GROUP_ID, BBSW.ORDER_IN_GROUP, BBSW.GOOD, BBSW.BAD,
+                (SELECT VOTE_TYPE FROM BBSW_LIKES WHERE USER_ID = :userId AND COMMENT_NO = BBSW.NO) AS MY_VOTE_TYPE
+            FROM BBSW
+            WHERE BBS_NO = :bbs_no
+            ORDER BY BBSW.GROUP_ID ASC, BBSW.ORDER_IN_GROUP ASC
+        `; 
+        
+        console.log(`[Info] /read: 댓글 조회 SQL: ${sql}`);
+        const wbbsRows = await connection.execute(sql, { bbs_no: req.query.brdno, userId: userId }); 
+        console.log(`[Info] /read: 댓글 ${wbbsRows.rows.length}개 조회됨.`);
+        
+        res.render('bbs/read', {bbs: retBBS, wbbs: wbbsRows.rows, loggedInUser: userId}); // .rows로 데이터 전달, 로그인 사용자 ID 추가
+        
+    } catch (err) {
+        console.error(`[Error] /read: 게시글/댓글 조회 중 오류 발생: ${err.message}`, err.stack);
+        res.render('bbs/error', {errcode: 500}); // 에러 페이지 렌더링
+    } finally {
+        if (connection) {
+            try { await connection.close(); }
+            catch (e) { console.error(`[Error] /read: DB 연결 해제 중 오류: ${e.message}`, e.stack); }
+        }
+    }
 });
 
 router.post('/wsave', async function(req, res, next){
@@ -518,6 +521,93 @@ router.get('/w_delete', async function(req, res, next){
       }
   }
 });
+
+router.get('/w_vote', async function(req, res, next) {
+    const commentNo = req.query.commentNo;
+    const voteType = parseInt(req.query.voteType); // 1: 좋아요, 0: 싫어요
+    const bbsno = req.query.bbsno; // 좋아요/싫어요 후 돌아갈 게시글의 NO
+
+    if (!req.session.user) {
+        console.warn(`[Warning] /w_vote: 로그인되지 않은 사용자 투표 시도. IP: ${req.ip}`);
+        return res.render('bbs/error', { errcode: 5 }); // errcode 5: 로그인 필요
+    }
+
+    const userId = req.session.user.id;
+    let connection;
+
+    try {
+        connection = await oracledb.getConnection(dbconfig);
+
+        // 1. 이미 투표했는지 확인
+        const checkVoteSql = `SELECT VOTE_TYPE FROM BBSW_LIKES WHERE USER_ID = :userId AND COMMENT_NO = :commentNo`;
+        const checkResult = await connection.execute(checkVoteSql, { userId: userId, commentNo: commentNo });
+
+        let updateSql = '';
+        let message = '';
+
+        if (checkResult.rows.length > 0) {
+            // 이미 투표한 경우
+            const existingVoteType = checkResult.rows[0][0];
+
+            if (existingVoteType === voteType) {
+                // 같은 종류의 투표를 다시 누른 경우 -> 투표 취소 (좋아요 -> 좋아요 다시 누르면 취소)
+                const deleteVoteSql = `DELETE FROM BBSW_LIKES WHERE USER_ID = :userId AND COMMENT_NO = :commentNo`;
+                await connection.execute(deleteVoteSql, { userId: userId, commentNo: commentNo });
+
+                if (voteType === 1) { // 좋아요 취소
+                    updateSql = `UPDATE BBSW SET GOOD = GOOD - 1 WHERE NO = :commentNo`;
+                    message = '좋아요를 취소했습니다.';
+                } else { // 싫어요 취소
+                    updateSql = `UPDATE BBSW SET BAD = BAD - 1 WHERE NO = :commentNo`;
+                    message = '싫어요를 취소했습니다.';
+                }
+                await connection.execute(updateSql, { commentNo: commentNo });
+                console.log(`[Success] /w_vote: 댓글 (NO:${commentNo}) ${message} 사용자: ${userId}`);
+            } else {
+                // 다른 종류의 투표를 누른 경우 -> 투표 변경 (좋아요 -> 싫어요 또는 싫어요 -> 좋아요)
+                const updateVoteSql = `UPDATE BBSW_LIKES SET VOTE_TYPE = :voteType, REGDATE = SYSDATE WHERE USER_ID = :userId AND COMMENT_NO = :commentNo`;
+                await connection.execute(updateVoteSql, { voteType: voteType, userId: userId, commentNo: commentNo });
+
+                if (voteType === 1) { // 싫어요 -> 좋아요
+                    updateSql = `UPDATE BBSW SET BAD = BAD - 1, GOOD = GOOD + 1 WHERE NO = :commentNo`;
+                    message = '싫어요를 좋아요로 변경했습니다.';
+                } else { // 좋아요 -> 싫어요
+                    updateSql = `UPDATE BBSW SET GOOD = GOOD - 1, BAD = BAD + 1 WHERE NO = :commentNo`;
+                    message = '좋아요를 싫어요로 변경했습니다.';
+                }
+                await connection.execute(updateSql, { commentNo: commentNo });
+                console.log(`[Success] /w_vote: 댓글 (NO:${commentNo}) ${message} 사용자: ${userId}`);
+            }
+        } else {
+            // 처음 투표하는 경우
+            const insertVoteSql = `INSERT INTO BBSW_LIKES (USER_ID, COMMENT_NO, VOTE_TYPE, REGDATE) VALUES (:userId, :commentNo, :voteType, SYSDATE)`;
+            await connection.execute(insertVoteSql, { userId: userId, commentNo: commentNo, voteType: voteType });
+
+            if (voteType === 1) { // 좋아요
+                updateSql = `UPDATE BBSW SET GOOD = GOOD + 1 WHERE NO = :commentNo`;
+                message = '좋아요를 등록했습니다.';
+            } else { // 싫어요
+                updateSql = `UPDATE BBSW SET BAD = BAD + 1 WHERE NO = :commentNo`;
+                message = '싫어요를 등록했습니다.';
+            }
+            await connection.execute(updateSql, { commentNo: commentNo });
+            console.log(`[Success] /w_vote: 댓글 (NO:${commentNo}) ${message} 사용자: ${userId}`);
+        }
+
+        res.redirect(`/bbs/read?brdno=${bbsno}`);
+
+    } catch (err) {
+        console.error(`[Error] /w_vote: 투표 처리 중 오류 발생: ${err.message}`, err.stack);
+        res.render('bbs/error', { errcode: 500 });
+    } finally {
+        if (connection) {
+            try { await connection.close(); }
+            catch (e) { console.error(`[Error] /w_vote: DB 연결 해제 중 오류: ${e.message}`, e.stack); }
+        }
+    }
+});
+
+
 
 
 router.get('/update',function(req,res,next) {
