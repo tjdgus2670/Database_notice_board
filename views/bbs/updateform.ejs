@@ -2,30 +2,125 @@
 <html>
 <head>
     <meta http-equiv="Content-Type" content="text/html; charset=utf-8"/>
-    <title>update</title>
-    </head>
+    <title>게시글 수정</title>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background-color: #f4f7f6;
+            margin: 40px;
+            display: flex;
+            justify-content: center;
+            align-items: flex-start; /* Align to the top of the container */
+            min-height: 100vh;
+        }
+
+        form {
+            background-color: #ffffff;
+            padding: 30px;
+            border-radius: 10px;
+            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.1);
+            width: 100%;
+            max-width: 700px; /* Increased max-width */
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-bottom: 20px;
+        }
+
+        table td {
+            padding: 15px;
+            border: 1px solid #e0e0e0;
+            vertical-align: middle;
+            font-size: 1.05em;
+        }
+
+        table td:first-child {
+            background-color: #eef1f4;
+            font-weight: bold;
+            width: 120px; /* Fixed width for labels */
+            color: #333;
+        }
+
+        input[type="text"],
+        textarea {
+            width: calc(100% - 20px); /* Account for padding */
+            padding: 10px;
+            margin: 0;
+            border: 1px solid #cccccc;
+            border-radius: 5px;
+            font-size: 1em;
+            box-sizing: border-box; /* Include padding in element's total width and height */
+            transition: border-color 0.3s;
+        }
+
+        input[type="text"]:focus,
+        textarea:focus {
+            border-color: #007bff;
+            outline: none;
+            box-shadow: 0 0 5px rgba(0, 123, 255, 0.2);
+        }
+
+        textarea {
+            resize: vertical; /* Allow vertical resizing */
+            min-height: 120px; /* Minimum height for textarea */
+        }
+
+        .button-group {
+            text-align: right;
+            padding-top: 20px;
+        }
+
+        .save-button {
+            display: inline-block;
+            padding: 12px 25px;
+            background-color: #007bff;
+            color: white;
+            text-decoration: none;
+            border-radius: 5px;
+            font-size: 1.1em;
+            font-weight: bold;
+            transition: background-color 0.3s ease, transform 0.2s ease;
+            cursor: pointer;
+            border: none; /* Remove default button border */
+        }
+
+        .save-button:hover {
+            background-color: #0056b3;
+            transform: translateY(-2px);
+        }
+
+        .save-button:active {
+            background-color: #004080;
+            transform: translateY(0);
+        }
+    </style>
+</head>
 <body>
-    <% 
+    <%
         var column=rows[0];
     %>
     <form name="form1" action="/bbs/updatesave" method="post">
-        <table border="1" style="width:600px">
+        <table>
             <tbody>
                 <tr>
                     <td>작성자</td>
-                    <td><input type="text" name="brdwriter" size="20" maxlength="20" value="<%=column[3]%>"></td>
+                    <td><input type="text" name="brdwriter" value="<%=column[3]%>"></td>
                 </tr>
                 <tr>
                     <td>제목</td>
-                    <td><input type="text" name="brdtitle" size="70" maxlength="250" value="<%=column[1]%>"></td>
+                    <td><input type="text" name="brdtitle" value="<%=column[1]%>"></td>
                 </tr>
                 <tr>
                     <td>내용</td>
-                    <td><textarea name="brdmemo" rows="5" cols="60"><%=column[2]%></textarea></td>
+                    <td><textarea name="brdmemo"><%=column[2]%></textarea></td>
                 </tr>
             </tbody>
         </table>
-        <a href="#" onclick="form1.submit()">저장</a>
+        <div class="button-group">
+            <a href="#" onclick="form1.submit()" class="save-button">저장</a>
+        </div>
         <input type="hidden" name="brdno" value="<%=column[0]%>">
     </form>
 </body>

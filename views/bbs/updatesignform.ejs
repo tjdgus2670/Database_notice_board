@@ -3,37 +3,155 @@
 <head>
     <meta http-equiv="Content-Type" content="text/html; charset=utf-8"/>
     <title>회원 정보 수정</title>
+    <style>
+        /* 기본 스타일 */
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background-color: #f4f7f6; /* 부드러운 배경색 */
+            margin: 0;
+            padding: 40px 20px;
+            display: flex;
+            justify-content: center;
+            align-items: center; /* 세로 중앙 정렬 */
+            min-height: 100vh; /* 뷰포트 높이만큼 최소 높이 설정 */
+            box-sizing: border-box;
+        }
+
+        .container {
+            background-color: #ffffff;
+            padding: 35px 45px;
+            border-radius: 12px; /* 좀 더 둥근 모서리 */
+            box-shadow: 0 6px 20px rgba(0, 0, 0, 0.1); /* 깊이감 있는 그림자 */
+            width: 100%;
+            max-width: 650px; /* 적당한 최대 너비 설정 */
+            box-sizing: border-box;
+            text-align: center; /* 폼 제목 중앙 정렬 */
+        }
+
+        h2 {
+            color: #343a40;
+            margin-bottom: 30px;
+            font-size: 1.8em; /* 제목 크기 키우기 */
+            font-weight: 600;
+            border-bottom: 2px solid #e9ecef; /* 제목 아래 구분선 */
+            padding-bottom: 15px;
+            display: inline-block; /* 제목 아래 구분선을 제목 너비만큼만 표시 */
+        }
+
+        /* 폼 테이블 스타일 */
+        .info-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-bottom: 30px; /* 버튼과의 간격 */
+            border: 1px solid #e0e0e0; /* 전체 테이블 테두리 */
+            border-radius: 8px;
+            overflow: hidden; /* 모서리 둥글게 처리 */
+        }
+        .info-table tr {
+            transition: background-color 0.2s ease; /* 호버 효과 */
+        }
+        .info-table tr:nth-child(even) { /* 짝수 행 배경색 */
+            background-color: #fdfdfd;
+        }
+        .info-table tr:hover {
+            background-color: #f5f5f5; /* 호버 시 밝은 배경색 */
+        }
+
+        .info-table td {
+            padding: 15px 20px;
+            border: 1px solid #e9ecef; /* 셀 간 구분선 */
+            vertical-align: middle;
+            font-size: 1.05em;
+        }
+        .info-table td:first-child { /* 레이블 셀 */
+            background-color: #eef4f9; /* 레이블 배경색 */
+            font-weight: bold;
+            width: 150px; /* 레이블 너비 고정 */
+            color: #495057;
+            text-align: left; /* 레이블 텍스트 왼쪽 정렬 */
+        }
+        .info-table tr:last-child td {
+            border-bottom: none; /* 마지막 행 하단 테두리 제거 */
+        }
+
+        /* 입력 필드 스타일 */
+        input[type="text"],
+        input[type="password"],
+        input[type="email"] {
+            width: calc(100% - 24px); /* 패딩 및 테두리 고려 */
+            padding: 12px;
+            border: 1px solid #ced4da;
+            border-radius: 6px;
+            font-size: 1em;
+            box-sizing: border-box;
+            transition: border-color 0.2s ease, box-shadow 0.2s ease;
+        }
+        input[type="text"]:focus,
+        input[type="password"]:focus,
+        input[type="email"]:focus {
+            border-color: #007bff; /* 포커스 시 파란색 테두리 */
+            box-shadow: 0 0 0 0.2rem rgba(0, 123, 255, 0.25); /* 포커스 시 그림자 */
+            outline: none; /* 기본 아웃라인 제거 */
+        }
+
+        /* 버튼 스타일 */
+        .submit-button {
+            display: inline-block;
+            padding: 12px 28px;
+            background-color: #007bff; /* 파란색 버튼 */
+            color: white;
+            text-decoration: none;
+            border-radius: 8px; /* 둥근 버튼 */
+            font-size: 1.1em;
+            font-weight: bold;
+            transition: background-color 0.2s ease, transform 0.1s ease, box-shadow 0.2s ease;
+            cursor: pointer;
+            border: none;
+            box-shadow: 0 4px 10px rgba(0, 123, 255, 0.2); /* 버튼 그림자 */
+        }
+        .submit-button:hover {
+            background-color: #0056b3; /* 호버 시 어두운 파란색 */
+            transform: translateY(-2px); /* 호버 시 약간 위로 */
+            box-shadow: 0 6px 15px rgba(0, 123, 255, 0.3); /* 호버 시 그림자 강화 */
+        }
+        .submit-button:active {
+            transform: translateY(0); /* 클릭 시 원위치 */
+            box-shadow: 0 2px 5px rgba(0, 123, 255, 0.2); /* 클릭 시 그림자 약화 */
+        }
+    </style>
 </head>
 <body>
-    <% 
-        var column=rows[0];
-    %>
-    <form name="form1" action="/bbs/updatesignsave" method="post">
-        <table border="1" style="width:600px">
-            <tbody>
-                <tr>
-                    <td>아이디</td>
-                    <td><input type="text" name="id" size="20" maxlength="20" value="<%=column[0]%>"></td>
-                </tr>
-                <tr>
-                    <td>패스워드</td>
-                    <td><input type="password" name="pw1" size="20" maxlength="20" value=""></td>
-                </tr>
-                <tr>
-                    <td>패스워드확인</td>
-                    <td><input type="password" name="pw2" size="20" maxlength="20" value=""></td>
-                </tr>
-                <tr>
-                    <td>이름</td>
-                    <td><input type="text" name="name" size="20" maxlength="20" value="<%=column[2]%>"></td>
-                </tr>
-                <tr>
-                    <td>이메일</td>
-                    <td><input type="email" name="email" size="20" maxlength="20" value="<%=column[3]%>"></td>
-                </tr>
-            </tbody>
-        </table>
-        <a href="#" onclick="form1.submit()">정보수정</a>
-    </form>
+    <div class="container">
+        <h2>회원 정보 수정</h2>
+        <%
+            var column=rows[0];
+        %>
+        <form name="form1" action="/bbs/updatesignsave" method="post">
+            <table class="info-table">
+                <tbody>
+                    <tr>
+                        <td>아이디</td>
+                        <td><input type="text" name="id" value="<%=column[0]%>" readonly></td> </tr>
+                    <tr>
+                        <td>패스워드</td>
+                        <td><input type="password" name="pw1" value="" placeholder="새 비밀번호를 입력하세요"></td>
+                    </tr>
+                    <tr>
+                        <td>패스워드확인</td>
+                        <td><input type="password" name="pw2" value="" placeholder="새 비밀번호를 다시 입력하세요"></td>
+                    </tr>
+                    <tr>
+                        <td>이름</td>
+                        <td><input type="text" name="name" value="<%=column[2]%>"></td>
+                    </tr>
+                    <tr>
+                        <td>이메일</td>
+                        <td><input type="email" name="email" value="<%=column[3]%>"></td>
+                    </tr>
+                </tbody>
+            </table>
+            <a href="#" onclick="form1.submit()" class="submit-button">정보수정</a>
+        </form>
+    </div>
 </body>
 </html>

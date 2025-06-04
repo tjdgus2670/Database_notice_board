@@ -3,36 +3,240 @@
 <head>
     <meta http-equiv="Content-Type" content="text/html; charset=utf-8"/>
     <title>회원가입</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.5/dist/css/bootstrap.min.css" rel="stylesheet" crossorigin="anonymous">
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background-color: #e9ecef; /* 밝은 회색 배경 */
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh; /* 전체 화면 높이 사용 */
+            margin: 0;
+            padding: 20px;
+        }
+        .signup-container {
+            background-color: #ffffff;
+            padding: 40px;
+            border-radius: 10px;
+            box-shadow: 0 5px 20px rgba(0, 0, 0, 0.1);
+            width: 100%;
+            max-width: 500px; /* 폼의 최대 너비 제한 */
+        }
+        h2 {
+            text-align: center;
+            color: #343a40;
+            margin-bottom: 30px;
+            font-weight: 700;
+        }
+        .form-label {
+            font-weight: 600;
+            color: #495057;
+            margin-bottom: 8px; /* 라벨과 인풋 필드 간격 */
+        }
+        .form-control {
+            border-radius: 5px;
+            padding: 10px 15px;
+            height: auto; /* 기본 높이 재설정 */
+            font-size: 1rem;
+        }
+        .form-control:focus {
+            border-color: #80bdff;
+            box-shadow: 0 0 0 0.25rem rgba(0, 123, 255, 0.25);
+        }
+        .btn-signup {
+            width: 100%;
+            padding: 12px 20px;
+            font-size: 1.1rem;
+            font-weight: 600;
+            border-radius: 5px;
+            margin-top: 20px;
+            background-color: #007bff;
+            border-color: #007bff;
+            transition: background-color 0.2s ease, border-color 0.2s ease, transform 0.2s ease;
+        }
+        .btn-signup:hover {
+            background-color: #0056b3;
+            border-color: #0056b3;
+            transform: translateY(-2px); /* 호버 시 살짝 위로 */
+            box-shadow: 0 4px 10px rgba(0, 0, 0, 0.1);
+        }
+        .text-danger {
+            font-size: 0.875em;
+            margin-top: 5px;
+            display: block; /* 오류 메시지를 한 줄씩 표시 */
+        }
+        /* EJS 알림 메시지 스타일 (이미 로그인되어 있을 경우) */
+        .alert-pre-login {
+            position: fixed;
+            top: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            padding: 15px 30px;
+            background-color: #d1ecf1; /* info 계열 색상 */
+            color: #0c5460;
+            border: 1px solid #bee5eb;
+            border-radius: 8px;
+            z-index: 1050;
+            font-size: 1.1rem;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+            text-align: center;
+        }
+    </style>
 </head>
 <body>
-    <% if(code == 1) { %> <script> alert('이미 로그인되어 있습니다.'); window.setTimeout(location.href='http://localhost:3000/bbs/', 1000 );</script> <% } %>
+    <% if(typeof code !== 'undefined' && code == 1) { %>
+        <div class="alert-pre-login">
+            이미 로그인되어 있습니다. 잠시 후 메인 페이지로 이동합니다.
+        </div>
+        <script>
+            alert('이미 로그인되어 있습니다.');
+            window.setTimeout(function() {
+                location.href = 'http://localhost:3000/bbs/';
+            }, 1000);
+        </script>
+    <% } %>
     
-    <form name="form1" action="/bbs/signupsave" method="post">
-        <table border="1" style="width:600px">
-            <tbody>
-                <tr>
-                    <td>아이디</td>
-                    <td><input type="text" name="id" size="20" maxlength="20" value=""></td>
-                </tr>
-                <tr>
-                    <td>패스워드</td>
-                    <td><input type="password" name="pw1" size="20" maxlength="20" value=""></td>
-                </tr>
-                <tr>
-                    <td>패스워드확인</td>
-                    <td><input type="password" name="pw2" size="20" maxlength="20" value=""></td>
-                </tr>
-                <tr>
-                    <td>이름</td>
-                    <td><input type="text" name="name" size="20" maxlength="20" value=""></td>
-                </tr>
-                <tr>
-                    <td>이메일</td>
-                    <td><input type="email" name="email" size="20" maxlength="20" value=""></td>
-                </tr>
-            </tbody>
-        </table>
-        <a href="#" onclick="form1.submit()">회원가입</a>
-    </form>
+    <div class="signup-container">
+        <h2>회원가입</h2>
+        <form name="form1" action="/bbs/signupsave" method="post">
+            <div class="mb-3">
+                <label for="id" class="form-label">아이디</label>
+                <input type="text" class="form-control" id="id" name="id" maxlength="20" required>
+                <div id="idFeedback" class="text-danger"></div>
+            </div>
+            <div class="mb-3">
+                <label for="pw1" class="form-label">패스워드</label>
+                <input type="password" class="form-control" id="pw1" name="pw1" maxlength="20" required>
+                <div id="pw1Feedback" class="text-danger"></div>
+            </div>
+            <div class="mb-3">
+                <label for="pw2" class="form-label">패스워드 확인</label>
+                <input type="password" class="form-control" id="pw2" name="pw2" maxlength="20" required>
+                <div id="pw2Feedback" class="text-danger"></div>
+            </div>
+            <div class="mb-3">
+                <label for="name" class="form-label">이름</label>
+                <input type="text" class="form-control" id="name" name="name" maxlength="20" required>
+                <div id="nameFeedback" class="text-danger"></div>
+            </div>
+            <div class="mb-4">
+                <label for="email" class="form-label">이메일</label>
+                <input type="email" class="form-control" id="email" name="email" maxlength="50" required>
+                <div id="emailFeedback" class="text-danger"></div>
+            </div>
+            
+            <button type="submit" class="btn btn-primary btn-signup">회원가입</button>
+        </form>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.5/dist/js/bootstrap.bundle.min.js" crossorigin="anonymous"></script>
+    <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            const form = document.forms.form1;
+            const idInput = form.id;
+            const pw1Input = form.pw1;
+            const pw2Input = form.pw2;
+            const nameInput = form.name;
+            const emailInput = form.email;
+
+            const idFeedback = document.getElementById('idFeedback');
+            const pw1Feedback = document.getElementById('pw1Feedback');
+            const pw2Feedback = document.getElementById('pw2Feedback');
+            const nameFeedback = document.getElementById('nameFeedback');
+            const emailFeedback = document.getElementById('emailFeedback');
+
+            form.addEventListener('submit', function(event) {
+                let isValid = true;
+
+                // 모든 피드백 메시지 초기화
+                idFeedback.textContent = '';
+                pw1Feedback.textContent = '';
+                pw2Feedback.textContent = '';
+                nameFeedback.textContent = '';
+                emailFeedback.textContent = '';
+
+                // 아이디 유효성 검사 (예시: 4자 이상)
+                if (idInput.value.length < 4) {
+                    idFeedback.textContent = '아이디는 4자 이상이어야 합니다.';
+                    isValid = false;
+                }
+
+                // 패스워드 유효성 검사 (예시: 6자 이상)
+                if (pw1Input.value.length < 6) {
+                    pw1Feedback.textContent = '비밀번호는 6자 이상이어야 합니다.';
+                    isValid = false;
+                }
+
+                // 패스워드 확인
+                if (pw1Input.value !== pw2Input.value) {
+                    pw2Feedback.textContent = '비밀번호가 일치하지 않습니다.';
+                    isValid = false;
+                }
+
+                // 이름 유효성 검사 (빈 값 허용 안 함)
+                if (nameInput.value.trim() === '') {
+                    nameFeedback.textContent = '이름을 입력해주세요.';
+                    isValid = false;
+                }
+
+                // 이메일 유효성 검사 (기본 브라우저 검증 + 추가 로직)
+                if (!emailInput.value.includes('@') || !emailInput.value.includes('.')) {
+                    emailFeedback.textContent = '유효한 이메일 주소를 입력해주세요.';
+                    isValid = false;
+                }
+
+                if (!isValid) {
+                    event.preventDefault(); // 폼 전송 막기
+                }
+            });
+
+            // 실시간 피드백 (선택 사항)
+            idInput.addEventListener('input', function() {
+                if (idInput.value.length < 4) {
+                    idFeedback.textContent = '아이디는 4자 이상이어야 합니다.';
+                } else {
+                    idFeedback.textContent = '';
+                }
+            });
+
+            pw1Input.addEventListener('input', function() {
+                if (pw1Input.value.length < 6) {
+                    pw1Feedback.textContent = '비밀번호는 6자 이상이어야 합니다.';
+                } else {
+                    pw1Feedback.textContent = '';
+                }
+                if (pw1Input.value !== pw2Input.value && pw2Input.value !== '') {
+                    pw2Feedback.textContent = '비밀번호가 일치하지 않습니다.';
+                } else {
+                    pw2Feedback.textContent = '';
+                }
+            });
+
+            pw2Input.addEventListener('input', function() {
+                if (pw1Input.value !== pw2Input.value) {
+                    pw2Feedback.textContent = '비밀번호가 일치하지 않습니다.';
+                } else {
+                    pw2Feedback.textContent = '';
+                }
+            });
+
+            nameInput.addEventListener('input', function() {
+                if (nameInput.value.trim() === '') {
+                    nameFeedback.textContent = '이름을 입력해주세요.';
+                } else {
+                    nameFeedback.textContent = '';
+                }
+            });
+
+            emailInput.addEventListener('input', function() {
+                if (!emailInput.value.includes('@') || !emailInput.value.includes('.')) {
+                    emailFeedback.textContent = '유효한 이메일 주소를 입력해주세요.';
+                } else {
+                    emailFeedback.textContent = '';
+                }
+            });
+        });
+    </script>
 </body>
 </html>

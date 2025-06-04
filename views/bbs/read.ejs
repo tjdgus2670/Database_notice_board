@@ -1,202 +1,552 @@
 <!DOCTYPE html>
 <html>
 <head>
-    <meta http-equiv="Content-Type" content="text/html"; charset="utf-8"/>
-    <title>글읽기</title>
+    <meta http-equiv="Content-Type" content="text/html; charset=utf-8"/>
+    <title>게시글 보기</title>
     <style>
-        /* 기본 스타일 */
-        body { font-family: sans-serif; margin: 20px; }
-        table { border-collapse: collapse; margin-bottom: 20px; }
-        td, th { border: 1px solid #ccc; padding: 8px; }
-        a { text-decoration: none; color: #007bff; }
-        a:hover { text-decoration: underline; }
-        button { padding: 5px 10px; cursor: pointer; border: 1px solid #ccc; background-color: #f0f0f0; }
-        button:hover { background-color: #e0e0e0; }
-        .like-button, .dislike-button {
-            padding: 5px 10px;
-            cursor: pointer;
-            border: 1px solid #ccc;
-            background-color: #f0f0f0;
-            margin-right: 5px;
+        /* Base Styles */
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background-color: #f8f9fa; /* Light background */
+            margin: 0;
+            padding: 40px 20px; /* Add some overall padding */
+            display: flex;
+            justify-content: center;
+            min-height: 100vh;
+            box-sizing: border-box; /* Include padding in element's total width and height */
         }
+
+        .container {
+            background-color: #ffffff;
+            padding: 30px 40px;
+            border-radius: 10px;
+            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.08); /* Softer shadow */
+            width: 100%;
+            max-width: 1024px; /* Matches your table width */
+            box-sizing: border-box;
+        }
+
+        h2, h3 {
+            color: #343a40; /* Darker heading color */
+            margin-bottom: 25px;
+            border-bottom: 2px solid #e9ecef; /* Subtle underline */
+            padding-bottom: 10px;
+        }
+        h3 {
+            font-size: 1.3em;
+            margin-top: 30px;
+        }
+
+        /* Post Content Table */
+        .post-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-bottom: 30px;
+            border: 1px solid #dee2e6; /* Light border around the table */
+            border-radius: 8px; /* Rounded corners for the table */
+            overflow: hidden; /* Ensures rounded corners apply to content */
+        }
+        .post-table td {
+            padding: 15px 20px;
+            border: 1px solid #e9ecef; /* Lighter border for cells */
+            vertical-align: top; /* Align content to top for better readability */
+            font-size: 1.05em;
+            line-height: 1.6;
+        }
+        .post-table td:first-child {
+            background-color: #eef4f9; /* Light blueish background for labels */
+            font-weight: bold;
+            width: 120px; /* Consistent width for labels */
+            color: #495057;
+        }
+        .post-table tr:last-child td {
+            border-bottom: none; /* No bottom border for the last row */
+        }
+
+        /* Attachment Link */
+        .attachment-link {
+            color: #007bff;
+            text-decoration: none;
+            font-weight: 500;
+            transition: color 0.2s ease;
+        }
+        .attachment-link:hover {
+            color: #0056b3;
+            text-decoration: underline;
+        }
+
+        /* Action Buttons (List, Delete, Update) */
+        .action-links {
+            text-align: right; /* Align to the right */
+            margin-top: -15px; /* Pull it up a bit */
+            margin-bottom: 30px;
+            display: flex; /* Use flex to space items */
+            justify-content: flex-end; /* Align items to the end */
+            gap: 15px; /* Space between links */
+        }
+        .action-links a {
+            display: inline-block;
+            padding: 8px 15px;
+            background-color: #6c757d; /* Gray for general actions */
+            color: white;
+            border-radius: 5px;
+            font-size: 0.95em;
+            transition: background-color 0.2s ease, transform 0.1s ease;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+        }
+        .action-links a:hover {
+            background-color: #5a6268;
+            text-decoration: none;
+            transform: translateY(-1px);
+        }
+        .action-links a:active {
+            transform: translateY(0);
+            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+        }
+        .action-links a[href*="delete"] {
+            background-color: #dc3545; /* Red for delete */
+        }
+        .action-links a[href*="delete"]:hover {
+            background-color: #c82333;
+        }
+        .action-links a[href*="update"] {
+            background-color: #28a745; /* Green for update */
+        }
+        .action-links a[href*="update"]:hover {
+            background-color: #218838;
+        }
+
+        hr {
+            border: 0;
+            border-top: 1px solid #e9ecef;
+            margin: 40px 0;
+        }
+
+        /* New Comment Form */
+        .comment-form-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-bottom: 20px;
+            border: 1px solid #e9ecef;
+            border-radius: 8px;
+            overflow: hidden;
+        }
+        .comment-form-table td {
+            padding: 15px 20px;
+            border: 1px solid #e9ecef;
+        }
+        .comment-form-table td:first-child {
+            background-color: #eef4f9;
+            font-weight: bold;
+            width: 120px;
+            color: #495057;
+        }
+
+        textarea {
+            width: calc(100% - 20px); /* Adjust for padding */
+            padding: 12px;
+            border: 1px solid #ced4da;
+            border-radius: 6px;
+            font-size: 1em;
+            resize: vertical; /* Allow vertical resizing */
+            min-height: 80px;
+            box-sizing: border-box;
+            transition: border-color 0.2s ease, box-shadow 0.2s ease;
+        }
+        textarea:focus {
+            border-color: #007bff;
+            box-shadow: 0 0 0 0.2rem rgba(0, 123, 255, 0.25);
+            outline: none;
+        }
+
+        /* Buttons (General) */
+        button {
+            padding: 10px 20px;
+            cursor: pointer;
+            border: none;
+            border-radius: 6px;
+            font-size: 1em;
+            font-weight: bold;
+            transition: background-color 0.2s ease, transform 0.1s ease, box-shadow 0.2s ease;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+            white-space: nowrap; /* Prevent text wrapping on small buttons */
+        }
+        button[type="submit"] {
+            background-color: #007bff; /* Primary blue for submit */
+            color: white;
+            margin-top: 10px;
+        }
+        button[type="submit"]:hover {
+            background-color: #0056b3;
+            transform: translateY(-1px);
+        }
+        button[type="submit"]:active {
+            transform: translateY(0);
+            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+        }
+
+        /* Comment List */
+        #comments-container {
+            margin-top: 20px;
+            border-top: 1px solid #e9ecef;
+            padding-top: 20px;
+        }
+        .comment-item {
+            padding: 15px 20px;
+            margin-bottom: 15px; /* Spacing between comment items */
+            background-color: #ffffff;
+            border-radius: 8px;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05); /* Base shadow for all comments */
+            transition: transform 0.2s ease, background-color 0.3s ease; /* Add background-color transition */
+        }
+        .comment-item:hover {
+            transform: translateY(-2px); /* Slight lift on hover */
+        }
+
+        .comment-header {
+            margin-bottom: 10px;
+            display: flex;
+            align-items: center;
+            flex-wrap: wrap;
+        }
+        .comment-header strong {
+            color: #343a40;
+            font-size: 1.05em;
+            margin-right: 10px; /* Space between writer and date */
+        }
+        .comment-header .comment-date {
+            font-size: 0.85em;
+            color: #6c757d;
+        }
+
+        .comment-content {
+            margin-bottom: 15px;
+            line-height: 1.6;
+            color: #495057;
+            word-wrap: break-word; /* Ensure long words break */
+        }
+
+        .comment-actions {
+            display: flex;
+            align-items: center;
+            gap: 10px; /* Space between action buttons/links */
+            flex-wrap: wrap; /* Allow wrapping on smaller screens */
+        }
+
+        /* Like/Dislike Buttons */
+        .like-button, .dislike-button {
+            padding: 8px 15px;
+            border-radius: 20px; /* Pill-shaped buttons */
+            font-size: 0.9em;
+            font-weight: 600;
+            transition: background-color 0.2s ease, color 0.2s ease, border-color 0.2s ease;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        .like-button {
+            background-color: #e2f0d9; /* Light green */
+            color: #28a745;
+            border: 1px solid #28a745;
+        }
+        .dislike-button {
+            background-color: #f8d7da; /* Light red */
+            color: #dc3545;
+            border: 1px solid #dc3545;
+        }
+        .like-button:hover {
+            background-color: #28a745;
+            color: white;
+        }
+        .dislike-button:hover {
+            background-color: #dc3545;
+            color: white;
+        }
+
         .like-button.active {
-            background-color: #28a745; /* 좋아요 선택 시 초록색 */
+            background-color: #28a745; /* Darker green when active */
             color: white;
             border-color: #28a745;
         }
         .dislike-button.active {
-            background-color: #dc3545; /* 싫어요 선택 시 빨간색 */
+            background-color: #dc3545; /* Darker red when active */
             color: white;
             border-color: #dc3545;
         }
 
-        /* 댓글 들여쓰기 스타일 */
-        .comment-item {
-            border-bottom: 1px dashed #eee;
-            padding: 10px 0;
-            margin-bottom: 5px; /* 각 댓글 항목 간 간격 */
+        .comment-actions span { /* For like/dislike counts when not logged in */
+            font-size: 0.9em;
+            color: #6c757d;
+            padding: 8px 0; /* Align with button padding */
+            white-space: nowrap; /* Prevent counts from wrapping */
         }
-        .comment-content {
-            margin-bottom: 5px;
-        }
-        /* DEPTH에 따른 들여쓰기 클래스 */
-        .depth-0 { padding-left: 0px; }
-        .depth-1 { padding-left: 30px; background-color: #f9f9f9; }
-        .depth-2 { padding-left: 60px; background-color: #f0f0f0; }
-        .depth-3 { padding-left: 90px; background-color: #e6e6e6; }
-        .depth-4 { padding-left: 120px; background-color: #dcdcdc; }
-        /* 필요에 따라 더 깊은 depth 추가 및 스타일 조정 */
 
-        /* 답글 입력 폼 숨김 처리 */
-        .reply-form {
-            display: none; /* 기본적으로 숨김 */
-            margin-top: 10px;
-            border: 1px solid #ddd;
-            padding: 10px;
-            background-color: #fafafa;
+        /* Reply Button */
+        .comment-actions button[onclick*="toggleReplyForm"] {
+            background-color: #007bff; /* Blue for reply button */
+            color: white;
+            margin-left: auto; /* Push it to the right */
+            padding: 8px 15px; /* Slightly smaller for better fit */
+            font-size: 0.9em;
         }
+        .comment-actions button[onclick*="toggleReplyForm"]:hover {
+            background-color: #0056b3;
+        }
+
+        /* Comment Delete Link */
+        .comment-actions a {
+            color: #6c757d; /* Muted gray for delete link */
+            font-size: 0.9em;
+            margin-left: 5px; /* Space from reply button */
+            transition: color 0.2s ease;
+            white-space: nowrap; /* Prevent link from wrapping */
+        }
+        .comment-actions a:hover {
+            color: #dc3545; /* Red on hover for delete */
+            text-decoration: underline;
+        }
+
+        /* Comment Indentation (Depth) - FURTHER ENHANCED */
+        .comment-item.depth-0 { /* Top-level comment */
+            margin-left: 0;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
+            border-radius: 8px;
+            border: 1px solid #e9ecef; /* Top level gets a subtle border */
+            background-color: #ffffff;
+        }
+
+        /* Styles for all replies (depth 1 and deeper) */
+        .comment-item.depth-1,
+        .comment-item.depth-2,
+        .comment-item.depth-3,
+        .comment-item.depth-4 {
+            margin-left: 30px; /* Consistent indentation */
+            padding-top: 15px; /* Consistent padding */
+            padding-bottom: 15px; /* Ensure bottom padding */
+            border-radius: 0; /* No border-radius for nested comments */
+            box-shadow: none; /* No shadow for nested comments */
+            border-top: 1px dashed #e9ecef; /* Separator for nested comments */
+            margin-top: 15px; /* Space from parent comment */
+            border-right: none; /* Remove right border */
+            border-bottom: none; /* Remove bottom border */
+        }
+
+        /* Specific styles for each depth */
+        .comment-item.depth-1 {
+            border-left: 5px solid #a7d9f2; /* Light blue */
+            background-color: #fcfdfe; /* Very light blue background */
+        }
+        .comment-item.depth-2 {
+            border-left: 5px solid #7bc6e7; /* Medium blue */
+            background-color: #f7fcfe; /* Slightly darker light blue */
+        }
+        .comment-item.depth-3 {
+            border-left: 5px solid #4aa8d9; /* Darker blue */
+            background-color: #f2fbff; /* Even darker light blue */
+        }
+        .comment-item.depth-4 {
+            border-left: 5px solid #1a8ccf; /* Deep blue */
+            background-color: #edf9ff; /* Lightest blue, almost white */
+        }
+        /* You can continue this pattern for more depths: */
+        /* .comment-item.depth-5 { border-left: 5px solid #0a6cb5; background-color: #e8f5fb; } */
+        /* .comment-item.depth-6 { border-left: 5px solid #085a9c; background-color: #e3f2fa; } */
+
+
+        /* Reply Form */
+        .reply-form {
+            display: none; /* Hidden by default */
+            margin-top: 15px;
+            border: 1px solid #e9ecef;
+            border-radius: 8px;
+            padding: 15px;
+            background-color: #fcfdfe; /* Lighter background for reply form */
+            box-shadow: inset 0 1px 5px rgba(0,0,0,0.05); /* Inner shadow */
+            position: relative;
+        }
+        .reply-form textarea {
+            min-height: 60px; /* Smaller textarea for replies */
+            margin-bottom: 10px;
+            width: calc(100% - 24px); /* Adjust for padding and border */
+        }
+        .reply-form .form-actions {
+            display: flex;
+            justify-content: flex-end; /* Align buttons to the right */
+            gap: 10px;
+        }
+        .reply-form button {
+            margin-top: 0; /* Reset margin from general button style */
+            box-shadow: none; /* No shadow on reply form buttons */
+            padding: 8px 15px; /* Smaller padding */
+            font-size: 0.9em;
+        }
+        .reply-form button[type="submit"] {
+            background-color: #007bff;
+            color: white;
+        }
+        .reply-form button[type="submit"]:hover {
+            background-color: #0056b3;
+        }
+        .reply-form button[type="button"] { /* Cancel button */
+            background-color: #6c757d;
+            color: white;
+        }
+        .reply-form button[type="button"]:hover {
+            background-color: #5a6268;
+        }
+
+        /* Deleted Comment Style */
         .deleted-comment {
             color: #999;
             font-style: italic;
-            background-color: #f2f2f2;
-            padding: 5px;
-            border-radius: 3px;
+            background-color: #f0f0f0; /* Slightly darker than default */
+            padding: 10px 15px;
+            border-radius: 5px;
+            border: 1px dashed #e0e0e0;
+            margin-bottom: 10px; /* Space below deleted comment */
         }
     </style>
 </head>
 <body>
-    <%
-        console.log("bbs.rows : " + JSON.stringify(bbs.rows)); // 백엔드에서 받은 게시글 데이터
-        var column = bbs.rows[0]; // 게시글 정보 배열
-    %>
-    <h2>게시글 보기</h2>
-    <table border="1" style="width:1024px">
-        <tbody>
-            <tr><td>글번호</td><td><%=column[0]%></td></tr>
-            <tr><td>작성자</td><td><%=column[3]%></td></tr>
-            <tr><td>제목</td><td><%=column[1]%></td></tr>
-            <tr><td>내용</td><td><%=column[2]%></td></tr>
-            <tr><td>작성 날짜</td><td><%=column[4]%></td></tr>
-            <tr><td>조회수</td><td><%=column[6]%></td></tr>
-            <tr>
-                <td>첨부 파일</td>
-                <td>
-                    <% if (column[7] && column[8]) { %>
-                        <a href="<%= column[7] %>" download="<%= column[8] %>">
-                            <%= column[8] %>
-                        </a>
-                    <% } else { %>
-                        첨부 파일 없음
-                    <% } %>
-                </td>
-            </tr>
-        </tbody>
-    </table>
-    <p>
-        <a href="/bbs/list">게시판 홈으로 돌아가기</a> /
-        <a href="/bbs/delete?brdno=<%=column[0]%>">게시글 삭제</a> /
-        <a href="/bbs/update?brdno=<%=column[0]%>">게시글 수정</a>
-    </p>
-
-    <hr/>
-
-    <h3>새 댓글 작성</h3>
-    <form name="commentForm" action="/bbs/wsave" method="post">
-        <table border="1" style="width:1024px">
+    <div class="container">
+        <%
+            console.log("bbs.rows : " + JSON.stringify(bbs.rows)); // Backend post data
+            var column = bbs.rows[0]; // Post information array
+        %>
+        <h2>게시글 보기</h2>
+        <table class="post-table">
             <tbody>
+                <tr><td>글번호</td><td><%=column[0]%></td></tr>
+                <tr><td>작성자</td><td><%=column[3]%></td></tr>
+                <tr><td>제목</td><td><%=column[1]%></td></tr>
+                <tr><td>내용</td><td><%=column[2]%></td></tr>
+                <tr><td>작성 날짜</td><td><%=column[4]%></td></tr>
+                <tr><td>조회수</td><td><%=column[6]%></td></tr>
                 <tr>
-                    <td>댓글 내용</td>
-                    <td><textarea name="wbrdmemo" rows="3" cols="70" placeholder="댓글을 입력하세요."></textarea></td>
-                </tr>          
+                    <td>첨부 파일</td>
+                    <td>
+                        <% if (column[7] && column[8]) { %>
+                            <a href="<%= column[7] %>" download="<%= column[8] %>" class="attachment-link">
+                                <%= column[8] %>
+                            </a>
+                        <% } else { %>
+                            첨부 파일 없음
+                        <% } %>
+                    </td>
+                </tr>
             </tbody>
         </table>
-        <button type="submit">댓글 저장</button>
-        <input type="hidden" name="bbsno" value="<%=column[0]%>">
-        <input type="hidden" name="parent_no" value=""> </form>
+        <div class="action-links">
+            <a href="/bbs/list">게시판 홈으로 돌아가기</a>
+            <a href="/bbs/delete?brdno=<%=column[0]%>">게시글 삭제</a>
+            <a href="/bbs/update?brdno=<%=column[0]%>">게시글 수정</a>
+        </div>
 
-    <hr/>
+        <hr/>
 
-    <h3>댓글 목록 (<%= wbbs.length %>개)</h3>
-    <div id="comments-container">
-        <%
-            console.log("wbbs.length : " + wbbs.length); // 백엔드에서 받은 댓글 데이터 배열의 길이
-            for(var i = 0; i < wbbs.length; i++) { 
-                var wcolumn = wbbs[i]; // 배열의 요소 직접 접근
-                // 백엔드 read 라우터에서 조회하는 컬럼 순서에 따라 인덱스 조정
-                // [0]: NO, [1]: BBS_NO, [2]: WRITER, [3]: CONTENT
-                // [4]: REGDATE_FORMATTED, [5]: WCOUNT, [6]: OK
-                // [7]: PARENT_NO, [8]: DEPTH, [9]: GROUP_ID, [10]: ORDER_IN_GROUP
-                // [11]: GOOD, [12]: BAD
-                // [13]: MY_VOTE_TYPE (추가됨)
+        <h3>새 댓글 작성</h3>
+        <form name="commentForm" action="/bbs/wsave" method="post">
+            <table class="comment-form-table">
+                <tbody>
+                    <tr>
+                        <td>댓글 내용</td>
+                        <td><textarea name="wbrdmemo" rows="3" placeholder="댓글을 입력하세요."></textarea></td>
+                    </tr>
+                </tbody>
+            </table>
+            <button type="submit">댓글 저장</button>
+            <input type="hidden" name="bbsno" value="<%=column[0]%>">
+            <input type="hidden" name="parent_no" value="">
+        </form>
 
-                var commentNo = wcolumn[0];
-                var writer = wcolumn[2];
-                var content = wcolumn[3];
-                var regDate = wcolumn[4];
-                var depth = wcolumn[8]; // DEPTH 값 사용
-                var okStatus = wcolumn[6]; // OK 값 (0 또는 1)
-                var goodCount = wcolumn[11]; // GOOD (좋아요 수)
-                var badCount = wcolumn[12];  // BAD (싫어요 수)
-                var myVoteType = wcolumn[13]; // MY_VOTE_TYPE (로그인한 사용자의 투표 여부)
-        %>
-            <div class="comment-item depth-<%= depth %>">
-                <% if (okStatus === 0) { %>
-                    <div class="deleted-comment">
-                        삭제된 댓글입니다.
-                        <% // 삭제된 댓글에는 답글 달기 버튼을 표시하지 않습니다. %>
-                    </div>
-                <% } else { %>
-                    <div class="comment-header">
-                        <strong><%= writer %></strong> <span style="font-size: 0.8em; color: #888;">(<%= regDate %>)</span>
-                    </div>
-                    <div class="comment-content">
-                        <%= content %>
-                    </div>
-                    <div class="comment-actions">
-                        <% if (loggedInUser) { // 로그인한 사용자에게만 좋아요/싫어요 버튼 표시 %>
-                            <button type="button" class="like-button <%= myVoteType === 1 ? 'active' : '' %>" onclick="window.location.href='/bbs/w_vote?commentNo=<%=commentNo%>&voteType=1&bbsno=<%=column[0]%>'">좋아요 (<%= goodCount %>)</button>
-                            <button type="button" class="dislike-button <%= myVoteType === 0 ? 'active' : '' %>" onclick="window.location.href='/bbs/w_vote?commentNo=<%=commentNo%>&voteType=0&bbsno=<%=column[0]%>'">싫어요 (<%= badCount %>)</button>
+        <hr/>
+
+        <h3>댓글 목록 (<%= wbbs.length %>개)</h3>
+        <div id="comments-container">
+            <%
+                console.log("wbbs.length : " + wbbs.length); // Backend comment data array length
+                for(var i = 0; i < wbbs.length; i++) {
+                    var wcolumn = wbbs[i]; // Accessing array element directly
+                    // Adjust indices based on the column order from the backend read router
+                    // [0]: NO, [1]: BBS_NO, [2]: WRITER, [3]: CONTENT
+                    // [4]: REGDATE_FORMATTED, [5]: WCOUNT, [6]: OK
+                    // [7]: PARENT_NO, [8]: DEPTH, [9]: GROUP_ID, [10]: ORDER_IN_GROUP
+                    // [11]: GOOD, [12]: BAD
+                    // [13]: MY_VOTE_TYPE (added)
+
+                    var commentNo = wcolumn[0];
+                    var writer = wcolumn[2];
+                    var content = wcolumn[3];
+                    var regDate = wcolumn[4];
+                    var depth = wcolumn[8]; // Using DEPTH value
+                    var okStatus = wcolumn[6]; // OK value (0 or 1)
+                    var goodCount = wcolumn[11]; // GOOD (Likes count)
+                    var badCount = wcolumn[12];  // BAD (Dislikes count)
+                    var myVoteType = wcolumn[13]; // MY_VOTE_TYPE (Login user's vote status)
+            %>
+                    <div class="comment-item depth-<%= depth %>">
+                        <% if (okStatus === 0) { %>
+                            <div class="deleted-comment">
+                                삭제된 댓글입니다.
+                            </div>
                         <% } else { %>
-                            <span>좋아요 (<%= goodCount %>)</span>
-                            <span>싫어요 (<%= badCount %>)</span>
+                            <div class="comment-header">
+                                <strong><%= writer %></strong> <span class="comment-date">(<%= regDate %>)</span>
+                            </div>
+                            <div class="comment-content">
+                                <%= content %>
+                            </div>
+                            <div class="comment-actions">
+                                <% if (loggedInUser) { // Show like/dislike buttons only if logged in %>
+                                    <button type="button" class="like-button <%= myVoteType === 1 ? 'active' : '' %>" onclick="window.location.href='/bbs/w_vote?commentNo=<%=commentNo%>&voteType=1&bbsno=<%=column[0]%>'">좋아요 (<%= goodCount %>)</button>
+                                    <button type="button" class="dislike-button <%= myVoteType === 0 ? 'active' : '' %>" onclick="window.location.href='/bbs/w_vote?commentNo=<%=commentNo%>&voteType=0&bbsno=<%=column[0]%>'">싫어요 (<%= badCount %>)</button>
+                                <% } else { %>
+                                    <span>좋아요 (<%= goodCount %>)</span>
+                                    <span>싫어요 (<%= badCount %>)</span>
+                                <% } %>
+                                <button type="button" onclick="toggleReplyForm('<%= commentNo %>')">답글 달기</button>
+                                <% if (loggedInUser && loggedInUser === writer) { // Show delete button only if it's the comment author %>
+                                    <a href='/bbs/w_delete?commentNo=<%=commentNo%>&bbsno=<%=column[0]%>'>댓글 삭제</a>
+                                <% } %>
+                            </div>
                         <% } %>
-                        <button type="button" onclick="toggleReplyForm('<%= commentNo %>')">답글 달기</button>
-                        <% if (loggedInUser && loggedInUser === writer) { // 댓글 작성자에게만 댓글 삭제 버튼 표시 %>
-                            / <a href='/bbs/w_delete?commentNo=<%=commentNo%>&bbsno=<%=column[0]%>'>댓글 삭제</a>
-                        <% } %>
+
+                        <div id="replyForm_<%= commentNo %>" class="reply-form">
+                            <form name="replyForm_<%= commentNo %>" action="/bbs/wsave" method="post">
+                                <textarea name="wbrdmemo" rows="2" placeholder="<%= writer %>님에게 답글..."></textarea>
+                                <div class="form-actions">
+                                    <button type="submit">답글 저장</button>
+                                    <input type="hidden" name="bbsno" value="<%=column[0]%>">
+                                    <input type="hidden" name="parent_no" value="<%= commentNo %>">
+                                    <button type="button" onclick="toggleReplyForm('<%= commentNo %>')">취소</button>
+                                </div>
+                            </form>
+                        </div>
                     </div>
-                <% } %>
-                
-                <div id="replyForm_<%= commentNo %>" class="reply-form">
-                    <form name="replyForm_<%= commentNo %>" action="/bbs/wsave" method="post">
-                        <textarea name="wbrdmemo" rows="2" cols="60" placeholder="<%= writer %>님에게 답글..."></textarea>
-                        <button type="submit">답글 저장</button>
-                        <input type="hidden" name="bbsno" value="<%=column[0]%>">
-                        <input type="hidden" name="parent_no" value="<%= commentNo %>"> <button type="button" onclick="toggleReplyForm('<%= commentNo %>')">취소</button>
-                    </form>
-                </div>
-            </div>
-        <%
-            }
-        %>
+            <%
+                }
+            %>
+        </div>
     </div>
 
     <script>
-        // 답글 폼을 토글하는 함수
+        // Function to toggle reply form visibility
         function toggleReplyForm(commentNo) {
             var replyForm = document.getElementById('replyForm_' + commentNo);
-            
-            // 모든 답글 폼을 먼저 닫습니다.
+
+            // Close all other reply forms first
             var openForms = document.querySelectorAll('.reply-form');
             openForms.forEach(form => {
-                if (form.id !== 'replyForm_' + commentNo) { // 현재 열려는 폼이 아닌 다른 폼들만
+                if (form.id !== 'replyForm_' + commentNo) {
                     form.style.display = 'none';
                 }
             });
 
-            // 클릭한 답글 폼을 토글합니다.
+            // Toggle the clicked reply form
             if (replyForm.style.display === 'none' || replyForm.style.display === '') {
                 replyForm.style.display = 'block';
+                // Optional: Scroll to the reply form when opened
+                replyForm.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
             } else {
                 replyForm.style.display = 'none';
             }
