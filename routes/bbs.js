@@ -241,15 +241,21 @@ router.post('/logincheck', async function(req, res, next) {
 
 async function countRecord(){
     return new Promise(function(resolve,reject) {
-        
         oracledb.getConnection(dbconfig,function(err,connection) {
-
-            var sql = "SELECT COUNT(*) FROM BBS ";
-            
+            if (err) {
+                console.error("DB connection error:", err);
+                return reject(err);
+            }
+            var sql = "SELECT COUNT(*) FROM BBS WHERE OK = 1"; // OK = 1 인 활성화된 게시글만 카운트
             connection.execute(sql,function(err,count){
-                if(err) console.error("err : " + err);
-                var totalRecords=parseInt(count.rows);
-                console.log("total Records is "+totalRecords);
+                if(err) {
+                    console.error("Error counting active records: " + err);
+                    connection.release();
+                    reject(err);
+                    return;
+                }
+                var totalRecords=parseInt(count.rows[0][0]); // Oracle의 COUNT(*) 결과는 [[숫자]] 형태이므로 [0][0] 접근
+                console.log("Total Active Records is "+totalRecords);
                 connection.release();
                 resolve(totalRecords);
             });
@@ -260,31 +266,46 @@ async function countRecord(){
 router.get('/list',async function(req,res,next) {
     var stNum=0, totalRecords=0, totalPage=0, firstPage=0, lastPage=0, currentPage=1, blockSize=5, pageSize=5;
 
-    countRecord().then(function(totalRecords) {
+    countRecord().then(function(totalRecordsCount) {
+        totalRecords = totalRecordsCount;
         if(req.query.currentPage!=undefined) currentPage=parseInt(req.query.currentPage);
 
         totalPage=Math.ceil(totalRecords/pageSize);
 
         firstPage = Math.max(1, currentPage - 2);
-        lastPage    = Math.min(totalPage, currentPage + 2);
+        lastPage  = Math.min(totalPage, currentPage + 2);
         stNum=(currentPage-1)*pageSize;
 
         oracledb.getConnection(dbconfig,function(err,connection){
-        
-            var sql = "SELECT NO, TITLE, WRITER, CONTENT, to_char(REGDATE,'yyyy-mm-dd hh24:mi:ss'), OK, COUNT" + 
-                               " FROM BBS ORDER BY NO DESC OFFSET "+stNum+" ROWS FETCH NEXT "+pageSize+" ROWS ONLY";
-        
+            if (err) {
+                console.error("DB connection error:", err);
+                return res.render('bbs/error', { errcode: 500 });
+            }
+
+            // SQL 쿼리에 OK = 1 조건 추가
+            // data.rows에서 'OK' 컬럼의 인덱스는 현재 5번이므로, FILE_PATH, ORIGINAL_FILE_NAME이 추가되면 7, 8번으로 변경됩니다.
+            // 따라서 SELECT 문에 명시적으로 OK 컬럼을 포함시키고 인덱스를 확인해야 합니다.
+            var sql = "SELECT NO, TITLE, WRITER, CONTENT, to_char(REGDATE,'yyyy-mm-dd hh24:mi:ss'), OK, COUNT, FILE_PATH, ORIGINAL_FILE_NAME" +
+                                " FROM BBS WHERE OK = 1 ORDER BY NO DESC OFFSET "+stNum+" ROWS FETCH NEXT "+pageSize+" ROWS ONLY";
+
             connection.execute(sql,function(err,rows){
-                if(err) console.error("err : "+err);
+                if(err) {
+                    console.error("err : "+err);
+                    connection.release();
+                    return res.render('bbs/error', { errcode: 500 });
+                }
 
                 console.log(rows);
                 res.render('bbs/list', {data:rows,currentPage:currentPage,totalRecords:totalRecords,pageSize:pageSize,
-                                        totalPage:totalPage,blockSize:blockSize,firstPage:firstPage,lastPage:lastPage,
-                                        stNum:stNum});
+                                         totalPage:totalPage,blockSize:blockSize,firstPage:firstPage,lastPage:lastPage,
+                                         stNum:stNum, loggedInUser: req.session.user}); // loggedInUser 추가
                 connection.release();
             });
         });
-    })          
+    }).catch(function(error) {
+        console.error("Error in countRecord:", error);
+        res.render('bbs/error', { errcode: 500, message: "게시글 수를 불러오는 중 오류가 발생했습니다." });
+    });
 });
 
 router.get('/form',function(req,res,next){
@@ -322,7 +343,7 @@ router.post('/save', upload.single('userfile'), function(req,res,next){
         
         if (req.fileValidationError) {
             console.error("File upload validation error:", req.fileValidationError);
-            connection.release(); // 에러 발생 시 연결 해제
+            connection.release();
             return res.render('bbs/error', { errcode: 400, message: req.fileValidationError.message });
         }
 
@@ -333,15 +354,17 @@ router.post('/save', upload.single('userfile'), function(req,res,next){
             console.log("File path for DB:", filePath);
         }
 
-        const sql = "INSERT INTO BBS(NO, TITLE, CONTENT, WRITER, REGDATE, FILE_PATH, ORIGINAL_FILE_NAME) " +
-                    "VALUES(bbs_seq.nextval, :title, :content, :writer, SYSDATE, :filePath, :originalFileName)";
+        // SQL 쿼리 수정: OK 컬럼에 1을 삽입
+        const sql = "INSERT INTO BBS(NO, TITLE, CONTENT, WRITER, REGDATE, FILE_PATH, ORIGINAL_FILE_NAME, OK) " +
+                            "VALUES(bbs_seq.nextval, :title, :content, :writer, SYSDATE, :filePath, :originalFileName, :ok)"; // OK 컬럼 추가
         
         const binds = {
-            title: brdtitle,    // 수정된 변수 사용
-            content: brdmemo,   // 수정된 변수 사용
-            writer: brdwriter,  // 수정된 변수 사용
+            title: brdtitle,
+            content: brdmemo,
+            writer: brdwriter,
             filePath: filePath,
-            originalFileName: originalFileName
+            originalFileName: originalFileName,
+            ok: 1 // 새 게시글은 기본적으로 활성화 (OK=1)
         };
 
         connection.execute(sql, binds, { autoCommit: true }, function(err, result){ 
@@ -362,7 +385,6 @@ router.post('/save', upload.single('userfile'), function(req,res,next){
         });
     });
 });
-
 
 router.get('/read_count',function(req,res,next){
     oracledb.getConnection(dbconfig,function(err,connection){
@@ -386,14 +408,19 @@ router.get('/read_count',function(req,res,next){
 async function read_bbs(brdno){
     return new Promise(function(resolve,reject) {
         oracledb.getConnection(dbconfig,function(err,connection) {
-            // SQL 쿼리 수정: FILE_PATH, ORIGINAL_FILE_NAME 컬럼 추가
+            if (err) {
+                console.error("DB connection error:", err);
+                return reject(err);
+            }
+            // SQL 쿼리 수정: OK = 1 조건 추가
             var sql = "SELECT NO, TITLE, WRITER, CONTENT, to_char(REGDATE,'yyyy-mm-dd hh24:mi:ss'), OK, COUNT, FILE_PATH, ORIGINAL_FILE_NAME FROM BBS "+
-                      " WHERE NO = :brdno"; // 바인드 변수 사용
-            
-            connection.execute(sql, { brdno: brdno }, function(err,retBBS){ // 바인드 변수 전달
+                              " WHERE NO = :brdno AND OK = 1"; // 활성화된 게시글만 조회
+
+            connection.execute(sql, { brdno: brdno }, function(err,retBBS){
                 if(err) {
                     console.error("err : " + err);
-                    reject(err); // 에러 발생 시 reject
+                    connection.release();
+                    reject(err);
                 } else {
                     connection.release();
                     resolve(retBBS);
@@ -403,43 +430,39 @@ async function read_bbs(brdno){
     });
 }
 
-router.get('/read', async function(req,res,next){ // async 추가
+router.get('/read', async function(req,res,next){
     console.log(`[Info] /read: 게시글 조회 요청 (NO: ${req.query.brdno})`);
 
     let connection;
     try {
-        // 게시글 정보 조회 (기존 read_bbs 함수 사용)
-        const retBBS = await read_bbs(req.query.brdno); // await 사용
+        const retBBS = await read_bbs(req.query.brdno);
         if (!retBBS || retBBS.rows.length === 0) {
             console.warn(`[Warning] /read: 게시글 (NO: ${req.query.brdno})을 찾을 수 없음.`);
-            return res.render('bbs/error', { errcode: 404 }); // 게시글 없음
+            return res.render('bbs/error', { errcode: 404 });
         }
 
         connection = await oracledb.getConnection(dbconfig);
-        
-        // 댓글 조회 쿼리 수정: GROUP_ID와 ORDER_IN_GROUP으로 정렬
-        // PARENT_NO, DEPTH, GROUP_ID, ORDER_IN_GROUP, OK, GOOD, BAD 컬럼도 조회에 포함
-        // 로그인한 사용자가 해당 댓글에 투표했는지 여부 (MY_VOTE_TYPE)도 함께 조회
-        const userId = req.session.user ? req.session.user.id : null; // 로그인한 사용자 ID
+
+        const userId = req.session.user ? req.session.user.id : null;
         var sql = `
-            SELECT 
-                BBSW.NO, BBSW.BBS_NO, BBSW.WRITER, BBSW.CONTENT, to_char(BBSW.REGDATE,'yyyy-mm-dd hh24:mi:ss') AS REGDATE_FORMATTED, 
+            SELECT
+                BBSW.NO, BBSW.BBS_NO, BBSW.WRITER, BBSW.CONTENT, to_char(BBSW.REGDATE,'yyyy-mm-dd hh24:mi:ss') AS REGDATE_FORMATTED,
                 BBSW.WCOUNT, BBSW.OK, BBSW.PARENT_NO, BBSW.DEPTH, BBSW.GROUP_ID, BBSW.ORDER_IN_GROUP, BBSW.GOOD, BBSW.BAD,
                 (SELECT VOTE_TYPE FROM BBSW_LIKES WHERE USER_ID = :userId AND COMMENT_NO = BBSW.NO) AS MY_VOTE_TYPE
             FROM BBSW
             WHERE BBS_NO = :bbs_no
             ORDER BY BBSW.GROUP_ID ASC, BBSW.ORDER_IN_GROUP ASC
-        `; 
-        
+        `;
+
         console.log(`[Info] /read: 댓글 조회 SQL: ${sql}`);
-        const wbbsRows = await connection.execute(sql, { bbs_no: req.query.brdno, userId: userId }); 
+        const wbbsRows = await connection.execute(sql, { bbs_no: req.query.brdno, userId: userId });
         console.log(`[Info] /read: 댓글 ${wbbsRows.rows.length}개 조회됨.`);
-        
-        res.render('bbs/read', {bbs: retBBS, wbbs: wbbsRows.rows, loggedInUser: userId}); // .rows로 데이터 전달, 로그인 사용자 ID 추가
-        
+
+        res.render('bbs/read', {bbs: retBBS, wbbs: wbbsRows.rows, loggedInUser: req.session.user}); // req.session.user 전체 객체 전달
+
     } catch (err) {
         console.error(`[Error] /read: 게시글/댓글 조회 중 오류 발생: ${err.message}`, err.stack);
-        res.render('bbs/error', {errcode: 500}); // 에러 페이지 렌더링
+        res.render('bbs/error', {errcode: 500});
     } finally {
         if (connection) {
             try { await connection.close(); }

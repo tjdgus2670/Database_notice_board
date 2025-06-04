@@ -5,6 +5,7 @@
     <title>게시판</title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.5/dist/css/bootstrap.min.css" rel="stylesheet" crossorigin="anonymous">
     <style>
+        /* 기본 레이아웃 스타일 */
         body {
             font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
             background-color: #f8f9fa; /* 밝은 회색 배경 */
@@ -19,10 +20,11 @@
             width: 90%; /* 컨테이너 너비 조정 */
             max-width: 1200px; /* 최대 너비 설정 */
             background-color: #ffffff;
-            padding: 30px;
+            padding: 30px; /* 내부 여백 */
             border-radius: 8px;
             box-shadow: 0 4px 15px rgba(0, 0, 0, 0.1);
             margin-bottom: 30px;
+            position: relative; /* 자식 요소의 absolute 위치 지정을 위한 기준점 */
         }
         h2 {
             text-align: center;
@@ -30,6 +32,8 @@
             margin-bottom: 30px;
             font-weight: 600;
         }
+        
+        /* 테이블 스타일 */
         .table {
             margin-bottom: 30px;
             border-radius: 8px;
@@ -57,6 +61,8 @@
             color: #0056b3; /* 호버 시 색상 */
             text-decoration: underline; /* 호버 시 밑줄 */
         }
+
+        /* 페이지네이션 스타일 */
         .pagination-container {
             text-align: center;
             margin-top: 20px;
@@ -86,9 +92,9 @@
             font-weight: bold;
         }
         .pagination-container .numStyle:hover {
-             background-color: #0056b3; /* 활성화된 페이지 호버 색상 */
-             border-color: #0056b3;
-             text-decoration: none;
+            background-color: #0056b3; /* 활성화된 페이지 호버 색상 */
+            border-color: #0056b3;
+            text-decoration: none;
         }
 
         /* 검색 폼 스타일 */
@@ -131,16 +137,17 @@
             background-color: #5a6268;
         }
 
-        /* 버튼 그룹 스타일 */
+        /* 액션 버튼 그룹 스타일 (원래대로 복구) */
         .action-buttons {
             display: flex;
-            justify-content: center;
-            flex-wrap: wrap; /* 작은 화면에서 줄바꿈 */
+            justify-content: center; /* 중앙 정렬 */
+            flex-wrap: wrap;
             gap: 15px; /* 버튼 간 간격 */
             margin-top: 20px;
+            /* 이전의 배경색, 테두리, 그림자 등은 여기서 제거되었습니다. */
         }
         .action-buttons .btn {
-            min-width: 120px; /* 버튼 최소 너비 */
+            min-width: 120px;
             padding: 10px 20px;
             font-weight: 500;
             border-radius: 5px;
@@ -148,7 +155,7 @@
             transition: transform 0.2s ease, box-shadow 0.2s ease;
         }
         .action-buttons .btn:hover {
-            transform: translateY(-2px); /* 호버 시 살짝 위로 */
+            transform: translateY(-2px);
             box-shadow: 0 4px 8px rgba(0, 0, 0, 0.12);
         }
         /* 글쓰기 버튼만 Primary 색상으로 강조 */
@@ -172,50 +179,88 @@
             background-color: #007bff;
             color: white;
         }
-        /* Bootstrap 5.3.5 버전에는 btn-outline-primary가 존재합니다. */
+
+        /* 로그인 정보 표시 스타일 (컨테이너 좌하단) */
+        .logged-in-info {
+            position: absolute; /* .container-fluid 기준 절대 위치 */
+            bottom: 20px; /* 하단에서 20px */
+            left: 30px; /* 좌측에서 30px (컨테이너 padding과 맞춤) */
+            font-size: 0.95em; /* 폰트 크기 */
+            color: #555; /* 부드러운 회색 텍스트 */
+            font-weight: 600;
+            background-color: #f0f8ff; /* 검색 폼과 유사한 연한 파랑 배경 */
+            padding: 8px 15px; /* 내부 여백 */
+            border-radius: 5px; /* 모서리 둥글게 */
+            box-shadow: 0 2px 5px rgba(0, 0, 0, 0.1); /* 그림자 */
+            z-index: 10; /* 다른 요소 위에 오도록 */
+        }
+        .logged-in-info span.user-name {
+            color: #007bff; /* 사용자 이름 강조 색상 */
+            font-weight: bold;
+            margin-left: 5px;
+        }
+        /* 로그인/회원가입 그룹 스타일 (이전과 동일하게 유지) */
+        .login-signup-group {
+            display: flex;
+            gap: 15px;
+            flex-wrap: wrap;
+            justify-content: center; /* 내부 버튼들도 중앙 정렬 */
+        }
 
     </style>
 </head>
 
 <body>
     <div class="container-fluid">
+        <% if (loggedInUser) { %>
+            <div class="logged-in-info">
+                환영합니다,<span class="user-name"><%= loggedInUser.name || loggedInUser.id %></span>님!
+            </div>
+        <% } %>
+
         <h2>게시판 목록</h2>
 
-        <table class="table table-striped table-hover"> <thead>
-                <tr> <th>번호</th>
+        <table class="table table-striped table-hover">
+            <thead>
+                <tr>
+                    <th>번호</th>
                     <th>제목</th>
                     <th>등록자</th>
-                    <th>글내용</th> <th>등록일</th>
-                    <th>활성화</th>
+                    <th>글내용</th>
+                    <th>등록일</th>
                     <th>조회수</th>
+                    <% if (loggedInUser && loggedInUser.id === 'admin') { %>
+                        <th>관리</th> <% } %>
                 </tr>
             </thead>
             <tbody>
                 <%
-                    // console.log("list start ============"); // 개발 완료 후에는 주석 처리하거나 제거
-                    // console.log("rows : " +JSON.stringify(data.rows));
-                    // console.log("rows : " + data.rows.length);
-
                     if (data && data.rows && data.rows.length > 0) {
                         for(var i=0; i < data.rows.length; i++) {
                             column = data.rows[i];
-                            // console.log(column[0]); // 개발 완료 후에는 주석 처리하거나 제거
                 %>
-                        <tr>
-                            <td><a href='/bbs/read_count?brdno=<%=column[0]%>'><%=column[0]%></a></td>
-                            <td><a href='/bbs/read_count?brdno=<%=column[0]%>'><%=column[1]%></a></td>
-                            <td><%=column[2]%></td>
-                            <td><%=column[3]%></td>
-                            <td><%=column[4]%></td>
-                            <td><%=column[5]%></td>
-                            <td><%=column[6]%></td>
-                        </tr>
+                            <tr>
+                                <td><a href='/bbs/read_count?brdno=<%=column[0]%>'><%=column[0]%></a></td>
+                                <td><a href='/bbs/read_count?brdno=<%=column[0]%>'><%=column[1]%></a></td>
+                                <td><%=column[2]%></td>
+                                <td><%=column[3]%></td>
+                                <td><%=column[4]%></td>
+                                <td><%=column[6]%></td>
+                                <% if (loggedInUser && loggedInUser.id === 'admin') { %>
+                                    <td>
+                                        <button class="btn <%= column[5] === 1 ? 'btn-danger' : 'btn-success' %> btn-sm"
+                                                onclick="togglePostActive('<%= column[0] %>', <%= column[5] %>)">
+                                            <%= column[5] === 1 ? '비활성화' : '활성화' %>
+                                        </button>
+                                    </td>
+                                <% } %>
+                            </tr>
                 <%
                         }
                     } else {
                 %>
                         <tr>
-                            <td colspan="7" class="text-center py-4">게시글이 없습니다.</td>
+                            <td colspan="<%= loggedInUser && loggedInUser.id === 'admin' ? '7' : '6' %>" class="text-center py-4">게시글이 없습니다.</td>
                         </tr>
                 <%
                     }
@@ -245,7 +290,8 @@
             <% } %>
         </div>
 
-        <form action="/bbs/search" class="search-form" method="get"> <div class="mb-3">
+        <form action="/bbs/search" class="search-form" method="get">
+            <div class="mb-3">
                 <div class="form-check form-check-inline">
                     <input class="form-check-input" type="radio" name="choice" value="TITLE" id="searchTitle" checked>
                     <label class="form-check-label" for="searchTitle">제목 검색</label>
@@ -270,13 +316,46 @@
         </form>
 
         <div class="action-buttons">
-            <button type="button" class="btn btn-write" onclick="location.href='/bbs/form'">글쓰기</button>
-            <button type="button" class="btn btn-outline-primary" onclick="location.href='/bbs/login'">로그인</button>
-            <button type="button" class="btn btn-outline-primary" onclick="location.href='/bbs/logout'">로그아웃</button>
-            <button type="button" class="btn btn-outline-primary" onclick="location.href='/bbs/signup'">회원가입</button>
-            <button type="button" class="btn btn-outline-primary" onclick="location.href='/bbs/updatesignup'">정보수정</button>
+            <% if (loggedInUser) { %>
+                <button type="button" class="btn btn-write" onclick="location.href='/bbs/form'">글쓰기</button>
+                <button type="button" class="btn btn-outline-primary" onclick="location.href='/bbs/logout'">로그아웃</button>
+                <button type="button" class="btn btn-outline-primary" onclick="location.href='/bbs/updatesignup'">정보수정</button>
+            <% } else { %>
+                <div class="login-signup-group">
+                    <button type="button" class="btn btn-outline-primary" onclick="location.href='/bbs/login'">로그인</button>
+                    <button type="button" class="btn btn-outline-primary" onclick="location.href='/bbs/signup'">회원가입</button>
+                </div>
+            <% } %>
         </div>
     </div>
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.5/dist/js/bootstrap.bundle.min.js" crossorigin="anonymous"></script>
+    <script>
+        // 게시글 활성화/비활성화 토글 함수
+        function togglePostActive(brdno, currentOkStatus) {
+            const actionText = currentOkStatus === 1 ? '비활성화' : '활성화';
+            if (confirm(`게시글 ${brdno}을(를) ${actionText} 하시겠습니까?`)) {
+                fetch('/bbs/togglePostActive', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({ brdno: brdno, currentOkStatus: currentOkStatus }),
+                })
+                .then(response => response.json())
+                .then(data => {
+                    if (data.success) {
+                        alert(data.message);
+                        window.location.reload(); // 변경된 상태를 반영하기 위해 페이지 새로고침
+                    } else {
+                        alert('상태 변경 실패: ' + data.message);
+                    }
+                })
+                .catch(error => {
+                    console.error('Error:', error);
+                    alert('상태 변경 중 오류가 발생했습니다.');
+                });
+            }
+        }
+    </script>
 </body>
 </html>
