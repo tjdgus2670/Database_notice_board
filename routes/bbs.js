@@ -843,7 +843,7 @@ router.get('/w_vote', async function(req, res, next) {
     } finally {
         if (connection) {
             try { await connection.close(); }
-            catch (e) { console.error(`[Error] /w_vote: DB 연결 해제 중 오류: ${e.message}`, e.stack); }
+            catch (e) { console.error(`[Error] /w_vote: DB 연결 해제 중 오류 : ${e.message}`, e.stack); }
         }
     }
 });
