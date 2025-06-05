@@ -450,114 +450,110 @@ router.get('/read', async function(req,res,next){
                 BBSW.WCOUNT, BBSW.OK, BBSW.PARENT_NO, BBSW.DEPTH, BBSW.GROUP_ID, BBSW.ORDER_IN_GROUP, BBSW.GOOD, BBSW.BAD,
                 (SELECT VOTE_TYPE FROM BBSW_LIKES WHERE USER_ID = :userId AND COMMENT_NO = BBSW.NO) AS MY_VOTE_TYPE
             FROM BBSW
-            WHERE BBS_NO = :bbs_no
-            ORDER BY BBSW.GROUP_ID ASC, BBSW.ORDER_IN_GROUP ASC
-        `;
+            WHERE BBS_NO = :bbs_no AND BBSW.OK = 1 -- 활성화된 댓글만 가져오도록 추가
+            ORDER BY BBSW.GROUP_ID ASC, BBSW.REGDATE ASC, BBSW.ORDER_IN_GROUP ASC
+        `; // [cite: 252, 253, 254]
+        console.log(`[Info] /read: 댓글 조회 SQL: ${sql}`); // [cite: 254]
+        const wbbsRows = await connection.execute(sql, { bbs_no: req.query.brdno, userId: userId }); // [cite: 254]
+        console.log(`[Info] /read: 댓글 ${wbbsRows.rows.length}개 조회됨.`); // [cite: 255]
 
-        console.log(`[Info] /read: 댓글 조회 SQL: ${sql}`);
-        const wbbsRows = await connection.execute(sql, { bbs_no: req.query.brdno, userId: userId });
-        console.log(`[Info] /read: 댓글 ${wbbsRows.rows.length}개 조회됨.`);
-
-        res.render('bbs/read', {bbs: retBBS, wbbs: wbbsRows.rows, loggedInUser: req.session.user}); // req.session.user 전체 객체 전달
+        res.render('bbs/read', {bbs: retBBS, wbbs: wbbsRows.rows, loggedInUser: req.session.user}); // [cite: 255, 256]
 
     } catch (err) {
-        console.error(`[Error] /read: 게시글/댓글 조회 중 오류 발생: ${err.message}`, err.stack);
-        res.render('bbs/error', {errcode: 500});
+        console.error(`[Error] /read: 게시글/댓글 조회 중 오류 발생: ${err.message}`, err.stack); // [cite: 256]
+        res.render('bbs/error', {errcode: 500}); // [cite: 257]
     } finally {
         if (connection) {
-            try { await connection.close(); }
-            catch (e) { console.error(`[Error] /read: DB 연결 해제 중 오류: ${e.message}`, e.stack); }
+            try { await connection.close(); } // [cite: 257]
+            catch (e) { console.error(`[Error] /read: DB 연결 해제 중 오류: ${e.message}`, e.stack); } // [cite: 258, 259]
         }
     }
 });
 
 router.post('/wsave', async function(req, res, next){
-    const bbsno = req.body.bbsno; // 게시글 NO
-    const parent_no = req.body.parent_no || null; // 대댓글이면 부모 댓글 NO, 아니면 null
-    const wbrdmemo = req.body.wbrdmemo; // 댓글 내용
-    const writer = req.session.user ? req.session.user.id : null; // 작성자 ID (세션에서)
+    const bbsno = req.body.bbsno; // 게시글 NO [cite: 260]
+    const parent_no = req.body.parent_no || null; // 대댓글이면 부모 댓글 NO, 아니면 null [cite: 260]
+    const wbrdmemo = req.body.wbrdmemo; // 댓글 내용 [cite: 260]
+    const writer = req.session.user ? req.session.user.id : null; // 작성자 ID (세션에서) [cite: 260]
     let code = 0;
 
-    // 로그인 확인
+    // 로그인 확인 [cite: 260]
     if (!writer) {
-        code = 5; // errcode 5: 로그인 필요
-        console.log(`[Error] /wsave: 로그인되지 않은 사용자 접근 시도. IP: ${req.ip}`);
-        return res.render('bbs/error', {errcode : code});
+        code = 5; // errcode 5: 로그인 필요 [cite: 260]
+        console.log(`[Error] /wsave: 로그인되지 않은 사용자 접근 시도. IP: ${req.ip}`); // [cite: 261]
+        return res.render('bbs/error', {errcode : code}); // [cite: 261]
     }
 
     let connection;
     try {
-        connection = await oracledb.getConnection(dbconfig);
-        
+        connection = await oracledb.getConnection(dbconfig); // [cite: 261]
+
         let depth = 0;
         let group_id;
         let order_in_group;
 
-        // 1. 새로운 댓글의 NO를 Oracle 시퀀스에서 미리 얻기
+        // 1. 새로운 댓글의 NO를 Oracle 시퀀스에서 미리 얻기 [cite: 261, 262]
         // 이는 GROUP_ID를 자신으로 설정해야 하는 최상위 댓글의 경우에 필요합니다.
-        const noResult = await connection.execute("SELECT bbsw_seq.nextval FROM DUAL");
-        const newCommentNo = noResult.rows[0][0];
-        console.log(`[Info] /wsave: 새로운 댓글 NO 할당: ${newCommentNo}`);
+        const noResult = await connection.execute("SELECT bbsw_seq.nextval FROM DUAL"); // [cite: 262]
+        const newCommentNo = noResult.rows[0][0]; // [cite: 262]
+        console.log(`[Info] /wsave: 새로운 댓글 NO 할당: ${newCommentNo}`); // [cite: 262]
 
-        if (parent_no) { // **대댓글인 경우**
-            console.log(`[Info] /wsave: 대댓글 작성 시도 (부모 NO: ${parent_no})`);
-            // 부모 댓글의 DEPTH와 GROUP_ID를 조회
-            const parentResult = await connection.execute(
+        if (parent_no) { // **대댓글인 경우** [cite: 263]
+            console.log(`[Info] /wsave: 대댓글 작성 시도 (부모 NO: ${parent_no})`); // [cite: 263]
+            // 부모 댓글의 DEPTH와 GROUP_ID를 조회 [cite: 264]
+            const parentResult = await connection.execute( // [cite: 264]
                 "SELECT DEPTH, GROUP_ID FROM BBSW WHERE NO = :parent_no",
                 { parent_no: parent_no }
             );
+            if (parentResult.rows.length > 0) { // [cite: 265]
+                const parentDepth = parentResult.rows[0][0]; // [cite: 265]
+                const parentGroupId = parentResult.rows[0][1]; // [cite: 266]
 
-            if (parentResult.rows.length > 0) {
-                const parentDepth = parentResult.rows[0][0];
-                const parentGroupId = parentResult.rows[0][1];
+                depth = parentDepth + 1; // [cite: 266]
+                group_id = parentGroupId; // 부모의 group_id 상속 [cite: 266, 267]
 
-                depth = parentDepth + 1;
-                group_id = parentGroupId; // 부모의 group_id 상속
-
-                // ORDER_IN_GROUP 계산: 해당 그룹 내에서 가장 마지막에 추가
-                // 동일한 group_id를 가지면서 parent_no가 이 댓글의 parent_no인 댓글들 중
-                // 가장 큰 order_in_group을 찾아 +1 합니다.
-                const maxOrderInGroupResult = await connection.execute(
+                // ORDER_IN_GROUP 계산: 동일한 group_id 내에서, 부모가 동일한 댓글들 중 가장 마지막에 추가
+                // (이는 read 쿼리의 REGDATE ASC 정렬과 함께 정확한 순서를 보장)
+                const maxOrderInGroupResult = await connection.execute( // [cite: 268]
                     `SELECT NVL(MAX(ORDER_IN_GROUP), 0) FROM BBSW WHERE GROUP_ID = :group_id AND PARENT_NO = :parent_no`,
                     { group_id: group_id, parent_no: parent_no }
                 );
-                order_in_group = maxOrderInGroupResult.rows[0][0] + 1;
-                console.log(`[Info] /wsave: 대댓글 (NO:${newCommentNo}) - DEPTH: ${depth}, GROUP_ID: ${group_id}, ORDER_IN_GROUP: ${order_in_group}`);
-
+                order_in_group = maxOrderInGroupResult.rows[0][0] + 1; // [cite: 269]
+                console.log(`[Info] /wsave: 대댓글 (NO:${newCommentNo}) - DEPTH: ${depth}, GROUP_ID: ${group_id}, ORDER_IN_GROUP: ${order_in_group}`); // [cite: 269]
             } else {
-                // 부모 댓글을 찾을 수 없는 경우 (예외 상황), 최상위 댓글로 간주하고 경고
-                console.warn(`[Warning] /wsave: 부모 댓글 (NO: ${parent_no})를 찾을 수 없음. 최상위 댓글로 처리.`);
-                parent_no = null; // 최상위 댓글로 간주
-                depth = 0;
-                group_id = newCommentNo; // 자신의 NO를 group_id로
-                
-                // 최상위 댓글의 order_in_group은 해당 게시글 내 최상위 댓글 중 가장 마지막에 위치
-                const maxTopOrderResult = await connection.execute(
+                // 부모 댓글을 찾을 수 없는 경우 (예외 상황), 최상위 댓글로 간주하고 경고 [cite: 270]
+                console.warn(`[Warning] /wsave: 부모 댓글 (NO: ${parent_no})를 찾을 수 없음. 최상위 댓글로 처리.`); // [cite: 270]
+                parent_no = null; // 최상위 댓글로 간주 [cite: 271]
+                depth = 0; // [cite: 271]
+                group_id = newCommentNo; // 자신의 NO를 group_id로 [cite: 272]
+
+                // 최상위 댓글의 order_in_group은 해당 게시글 내 최상위 댓글 중 가장 마지막에 위치 [cite: 272]
+                const maxTopOrderResult = await connection.execute( // [cite: 272]
                     `SELECT NVL(MAX(ORDER_IN_GROUP), 0) FROM BBSW WHERE BBS_NO = :bbs_no AND PARENT_NO IS NULL`,
                     { bbs_no: bbsno }
                 );
-                order_in_group = maxTopOrderResult.rows[0][0] + 1;
-                console.log(`[Info] /wsave: 최상위 댓글 (NO:${newCommentNo}) - DEPTH: ${depth}, GROUP_ID: ${group_id}, ORDER_IN_GROUP: ${order_in_group}`);
+                order_in_group = maxTopOrderResult.rows[0][0] + 1; // [cite: 274]
+                console.log(`[Info] /wsave: 최상위 댓글 (NO:${newCommentNo}) - DEPTH: ${depth}, GROUP_ID: ${group_id}, ORDER_IN_GROUP: ${order_in_group}`); // [cite: 274]
             }
-        } else { // **최상위 댓글인 경우**
-            console.log(`[Info] /wsave: 최상위 댓글 작성 시도 (게시글 NO: ${bbsno})`);
-            depth = 0;
-            group_id = newCommentNo; // 자신의 NO를 group_id로
-            
-            // 최상위 댓글의 ORDER_IN_GROUP은 해당 게시글 내 최상위 댓글 중 가장 마지막에 추가
-            const maxTopOrderResult = await connection.execute(
+        } else { // **최상위 댓글인 경우** [cite: 275]
+            console.log(`[Info] /wsave: 최상위 댓글 작성 시도 (게시글 NO: ${bbsno})`); // [cite: 275]
+            depth = 0; // [cite: 276]
+            group_id = newCommentNo; // 자신의 NO를 group_id로 [cite: 276]
+
+            // 최상위 댓글의 ORDER_IN_GROUP은 해당 게시글 내 최상위 댓글 중 가장 마지막에 추가 [cite: 276]
+            const maxTopOrderResult = await connection.execute( // [cite: 276]
                 `SELECT NVL(MAX(ORDER_IN_GROUP), 0) FROM BBSW WHERE BBS_NO = :bbs_no AND PARENT_NO IS NULL`,
                 { bbs_no: bbsno }
             );
-            order_in_group = maxTopOrderResult.rows[0][0] + 1;
-            console.log(`[Info] /wsave: 최상위 댓글 (NO:${newCommentNo}) - DEPTH: ${depth}, GROUP_ID: ${group_id}, ORDER_IN_GROUP: ${order_in_group}`);
+            order_in_group = maxTopOrderResult.rows[0][0] + 1; // [cite: 278]
+            console.log(`[Info] /wsave: 최상위 댓글 (NO:${newCommentNo}) - DEPTH: ${depth}, GROUP_ID: ${group_id}, ORDER_IN_GROUP: ${order_in_group}`); // [cite: 278, 279]
         }
 
-        // 2. BBSW 테이블에 댓글 삽입
+        // 2. BBSW 테이블에 댓글 삽입 [cite: 279]
         const insertSql = `
             INSERT INTO BBSW (NO, BBS_NO, WRITER, CONTENT, REGDATE, PARENT_NO, DEPTH, GROUP_ID, ORDER_IN_GROUP, OK, WCOUNT, GOOD, BAD)
             VALUES (:no, :bbs_no, :writer, :content, SYSDATE, :parent_no, :depth, :group_id, :order_in_group, 1, 0, 0, 0)
-        `; // OK, WCOUNT, GOOD, BAD 초기값 설정
+        `; // [cite: 279]
         const binds = {
             no: newCommentNo,
             bbs_no: bbsno,
@@ -567,20 +563,18 @@ router.post('/wsave', async function(req, res, next){
             depth: depth,
             group_id: group_id,
             order_in_group: order_in_group
-        };
+        }; // [cite: 280, 281]
+        const result = await connection.execute(insertSql, binds); // [cite: 282]
+        console.log(`[Success] /wsave: 댓글 삽입 성공. Rows affected: ${result.rowsAffected}`); // [cite: 282]
 
-        const result = await connection.execute(insertSql, binds);
-        console.log(`[Success] /wsave: 댓글 삽입 성공. Rows affected: ${result.rowsAffected}`);
-
-        res.redirect("/bbs/read?brdno=" + bbsno);
-
+        res.redirect("/bbs/read?brdno=" + bbsno); // [cite: 282]
     } catch (err) {
-        console.error(`[Error] /wsave: 댓글 저장 중 오류 발생: ${err.message}`, err.stack);
-        res.render('bbs/error', {errcode : 500}); // 서버 오류
+        console.error(`[Error] /wsave: 댓글 저장 중 오류 발생: ${err.message}`, err.stack); // [cite: 283]
+        res.render('bbs/error', {errcode : 500}); // 서버 오류 [cite: 284]
     } finally {
         if (connection) {
-            try { await connection.close(); }
-            catch (e) { console.error(`[Error] /wsave: DB 연결 해제 중 오류: ${e.message}`, e.stack); }
+            try { await connection.close(); } // [cite: 284]
+            catch (e) { console.error(`[Error] /wsave: DB 연결 해제 중 오류: ${e.message}`, e.stack); } // [cite: 285, 286]
         }
     }
 });
