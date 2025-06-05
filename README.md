@@ -1,8 +1,7 @@
-# 📘 게시판 프로젝트 기능 구현 레포트
-
 ## 📂 테이블 생성 SQL
 
 ### 🗂️ BBS 테이블 (게시글 저장 테이블)
+
 ```sql
 CREATE TABLE BBS (
     NO NUMBER(10, 0) NOT NULL,
@@ -16,10 +15,10 @@ CREATE TABLE BBS (
     ORIGINAL_FILE_NAME VARCHAR2(255 BYTE),
     CONSTRAINT PK_BOARD_POSTS PRIMARY KEY (NO)
 );
+```
+
+
 🗂️ BBSW 테이블 (댓글/대댓글 저장 테이블)
-sql
-복사
-편집
 CREATE TABLE BBSW (
     NO NUMBER(10, 0) NOT NULL,
     BBS_NO NUMBER(10, 0),
@@ -37,9 +36,6 @@ CREATE TABLE BBSW (
     CONSTRAINT PK_BBS_POSTS PRIMARY KEY (NO)
 );
 🗂️ USERS 테이블 (회원 정보 저장 테이블)
-sql
-복사
-편집
 CREATE TABLE USERS (
     ID VARCHAR2(255 BYTE) NOT NULL,
     PASSWORD VARCHAR2(1024 BYTE) NOT NULL,
@@ -50,9 +46,6 @@ CREATE TABLE USERS (
     CONSTRAINT PK_USERS PRIMARY KEY (ID)
 );
 🗂️ BBSW_LIKES 테이블 (댓글 좋아요/싫어요 기록 테이블)
-sql
-복사
-편집
 CREATE TABLE BBSW_LIKES (
     USER_ID VARCHAR2(50) NOT NULL,
     COMMENT_NO NUMBER NOT NULL,
