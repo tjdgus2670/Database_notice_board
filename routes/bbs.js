@@ -896,23 +896,76 @@ router.post('/updatesave',function(req,res,next){
     });
 });
 
-router.get('/search',function(req,res,next){
+router.get('/search', function(req, res, next) {
 
-    oracledb.getConnection(dbconfig,function(err,connection){
+    oracledb.getConnection(dbconfig, function(err, connection) {
+        if (err) {
+            console.error("DB connection error for search:", err);
+            return res.render('bbs/error', { errcode: 500 });
+        }
+
         var sql;
-        if(req.query.choice=="TITLE_CONTENT"){
-            sql = "SELECT NO, TITLE, WRITER, CONTENT, to_char(REGDATE,'yyyy-mm-dd hh24:mi:ss'), OK" + 
-            " FROM BBS WHERE TITLE LIKE '%" + req.query.search + "%' OR CONTENT LIKE '%"+     req.query.search +
-            "%' ORDER BY NO DESC";
-        }
-        else{
-            sql = "SELECT NO, TITLE, WRITER, CONTENT, to_char(REGDATE,'yyyy-mm-dd hh24:mi:ss'), OK" + 
-            " FROM BBS WHERE " +req.query.choice +" LIKE '%" + req.query.search + "%'    ORDER BY NO DESC";
-        }
-        connection.execute(sql,function(err,rows){
-            if(err) console.error("err : "+err);
+        const searchChoice = req.query.choice;
+        const searchTerm = req.query.search;
 
-            res.render('bbs/list',rows);
+        if (!searchTerm || searchTerm.trim() === '') {
+            // 검색어가 없는 경우 전체 목록으로 리디렉션하거나 오류 처리
+            console.warn("[Warning] /search: 검색어가 비어있습니다. 전체 목록으로 리디렉션합니다.");
+            connection.release();
+            return res.redirect('/bbs/list');
+        }
+
+        // 모든 검색 쿼리에 OK = 1 조건 추가하여 활성화된 게시글만 검색되도록 함
+        if (searchChoice === "TITLE_CONTENT") {
+            sql = `SELECT NO, TITLE, WRITER, CONTENT, to_char(REGDATE,'yyyy-mm-dd hh24:mi:ss'), OK, COUNT, FILE_PATH, ORIGINAL_FILE_NAME
+                   FROM BBS
+                   WHERE (TITLE LIKE '%' || :searchTerm || '%' OR CONTENT LIKE '%' || :searchTerm || '%') AND OK = 1
+                   ORDER BY NO DESC`;
+        } else if (searchChoice === "TITLE" || searchChoice === "WRITER") {
+            sql = `SELECT NO, TITLE, WRITER, CONTENT, to_char(REGDATE,'yyyy-mm-dd hh24:mi:ss'), OK, COUNT, FILE_PATH, ORIGINAL_FILE_NAME
+                   FROM BBS
+                   WHERE ${searchChoice} LIKE '%' || :searchTerm || '%' AND OK = 1
+                   ORDER BY NO DESC`;
+        } else {
+            // 유효하지 않은 검색 조건 처리
+            console.warn("[Warning] /search: 유효하지 않은 검색 조건입니다:", searchChoice);
+            connection.release();
+            return res.render('bbs/error', { errcode: 400, message: "유효하지 않은 검색 조건입니다." });
+        }
+
+        console.log("Search SQL:", sql);
+        // 바인드 변수 사용
+        connection.execute(sql, { searchTerm: searchTerm }, function(err, result) { // [cite: 177]
+            if (err) {
+                console.error("err : " + err); // [cite: 177]
+                connection.release();
+                return res.render('bbs/error', { errcode: 500 });
+            }
+
+            // list.ejs 템플릿이 요구하는 형식에 맞춰 데이터 전달
+            // 검색 결과에는 페이지네이션이 적용되지 않을 수 있으므로,
+            // 간단하게 totalRecords를 검색된 레코드 수로 설정
+            // 실제 구현에서는 검색 결과에 대해서도 페이지네이션을 적용할 수 있습니다.
+            const totalRecords = result.rows.length;
+            const pageSize = totalRecords > 0 ? totalRecords : 1; // 0으로 나누는 오류 방지
+            const totalPage = 1; // 검색 결과는 보통 한 페이지에 다 보여주므로 1로 설정
+            const currentPage = 1;
+            const firstPage = 1;
+            const lastPage = 1;
+            const stNum = 0;
+
+            res.render('bbs/list', {
+                data: result, // result.rows가 아님. result 객체 전체 전달
+                currentPage: currentPage,
+                totalRecords: totalRecords,
+                pageSize: pageSize,
+                totalPage: totalPage,
+                blockSize: 5, // 필요에 따라 조정
+                firstPage: firstPage,
+                lastPage: lastPage,
+                stNum: stNum,
+                loggedInUser: req.session.user // 로그인 사용자 정보도 전달
+            });
             connection.release();
         });
     });
